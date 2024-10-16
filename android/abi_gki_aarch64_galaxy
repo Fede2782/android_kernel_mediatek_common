@@ -208,3 +208,4 @@
   __tracepoint_kfree_skb
   usb_set_device_state
   yield
+  android_create_function_device

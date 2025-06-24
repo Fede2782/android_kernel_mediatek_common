@@ -543,14 +543,19 @@ void __exfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 		fmt, ## args)
 
 /* expand to pr_*() with prefix */
+#define EXFAT_PRINTK_PREFIX "exFAT-fs (%s[%d:%d]): "
 #define exfat_err(sb, fmt, ...)						\
-	pr_err("exFAT-fs (%s): " fmt "\n", (sb)->s_id, ##__VA_ARGS__)
+	pr_err(EXFAT_PRINTK_PREFIX fmt "\n", (sb)->s_id,		\
+	       MAJOR((sb)->s_dev), MINOR((sb)->s_dev), ##__VA_ARGS__)
 #define exfat_warn(sb, fmt, ...)					\
-	pr_warn("exFAT-fs (%s): " fmt "\n", (sb)->s_id, ##__VA_ARGS__)
+	pr_warn(EXFAT_PRINTK_PREFIX fmt "\n", (sb)->s_id,		\
+	       MAJOR((sb)->s_dev), MINOR((sb)->s_dev), ##__VA_ARGS__)
 #define exfat_info(sb, fmt, ...)					\
-	pr_info("exFAT-fs (%s): " fmt "\n", (sb)->s_id, ##__VA_ARGS__)
+	pr_info(EXFAT_PRINTK_PREFIX fmt "\n", (sb)->s_id,		\
+	       MAJOR((sb)->s_dev), MINOR((sb)->s_dev), ##__VA_ARGS__)
 #define exfat_debug(sb, fmt, ...)					\
-	pr_debug("exFAT-fs (%s): " fmt "\n", (sb)->s_id, ##__VA_ARGS__)
+	pr_debug(EXFAT_PRINTK_PREFIX fmt "\n", (sb)->s_id,		\
+	       MAJOR((sb)->s_dev), MINOR((sb)->s_dev), ##__VA_ARGS__)
 
 void exfat_get_entry_time(struct exfat_sb_info *sbi, struct timespec64 *ts,
 		u8 tz, __le16 time, __le16 date, u8 time_cs);

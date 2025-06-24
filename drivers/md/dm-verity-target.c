@@ -16,6 +16,7 @@
 #include "dm-verity.h"
 #include "dm-verity-fec.h"
 #include "dm-verity-verify-sig.h"
+#include "dm-verity-debug.h"
 #include "dm-audit.h"
 #include <linux/module.h>
 #include <linux/reboot.h>
@@ -262,6 +263,7 @@ static void verity_hash_at_level(struct dm_verity *v, sector_t block, int level,
 /*
  * Handle verification errors.
  */
+#ifndef SEC_HEX_DEBUG
 static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 			     unsigned long long block)
 {
@@ -314,7 +316,7 @@ out:
 
 	return 1;
 }
-
+#endif
 /*
  * Verify hash of a metadata block pertaining to the specified data block
  * ("block" argument) at a specified level ("level" argument).
@@ -383,11 +385,23 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 			r = -EAGAIN;
 			goto release_ret_r;
 		} else if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_METADATA,
-					     want_digest, hash_block, data) == 0)
+					     want_digest, hash_block, data) == 0){
+#ifdef SEC_HEX_DEBUG
+			add_fec_correct_blks();
+			add_fc_blks_entry(hash_block, v->data_dev->name);
+#endif
 			aux->hash_verified = 1;
+		}
+#ifdef SEC_HEX_DEBUG
+		else if (verity_handle_err_hex_debug(v,
+					   DM_VERITY_BLOCK_TYPE_METADATA,
+					   hash_block, io, NULL, want_digest)) {
+			add_corrupted_blks();
+#else
 		else if (verity_handle_err(v,
 					   DM_VERITY_BLOCK_TYPE_METADATA,
 					   hash_block)) {
+#endif
 			struct bio *bio =
 				dm_bio_from_per_bio_data(io,
 							 v->ti->per_io_data_size);
@@ -511,16 +525,28 @@ static int verity_handle_data_hash_mismatch(struct dm_verity *v,
 	}
 #if defined(CONFIG_DM_VERITY_FEC)
 	if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_DATA, want_digest,
-			      blkno, data) == 0)
+			      blkno, data) == 0) {
+#ifdef SEC_HEX_DEBUG
+		add_fec_correct_blks();
+		add_fc_blks_entry(blkno, v->data_dev->name);
+#endif
 		return 0;
+	}
 #endif
 	if (bio->bi_status)
 		return -EIO; /* Error correction failed; Just return error */
-
+#ifdef SEC_HEX_DEBUG
+	if (verity_handle_err_hex_debug(v, DM_VERITY_BLOCK_TYPE_DATA,
+			   blkno, io, data, want_digest)) {
+		add_corrupted_blks();
+		return -EIO;
+	}
+#else
 	if (verity_handle_err(v, DM_VERITY_BLOCK_TYPE_DATA, blkno)) {
 		dm_audit_log_bio(DM_MSG_PREFIX, "verify-data", bio, blkno, 0);
 		return -EIO;
 	}
+#endif
 	return 0;
 }
 
@@ -605,8 +631,12 @@ static int verity_verify_io(struct dm_verity_io *io)
 		void *data;
 
 		if (v->validated_blocks && bio->bi_status == BLK_STS_OK &&
-		    likely(test_bit(blkno, v->validated_blocks)))
+		    likely(test_bit(blkno, v->validated_blocks))) {
+#ifdef SEC_HEX_DEBUG
+			add_skipped_blks();
+#endif
 			continue;
+		}
 
 		block = &io->pending_blocks[io->num_pending];
 
@@ -820,6 +850,15 @@ static int verity_map(struct dm_target *ti, struct bio *bio)
 	io->orig_bi_end_io = bio->bi_end_io;
 	io->block = bio->bi_iter.bi_sector >> (v->data_dev_block_bits - SECTOR_SHIFT);
 	io->n_blocks = bio->bi_iter.bi_size >> v->data_dev_block_bits;
+
+#ifdef SEC_HEX_DEBUG
+	add_total_blks(io->n_blocks);
+
+	if (get_total_blks() - get_prev_total_blks() > 0x4000) {
+		set_prev_total_blks(get_total_blks());
+		print_blks_cnt(v->data_dev->name);
+	}
+#endif
 
 	bio->bi_end_io = verity_end_io;
 	bio->bi_private = io;
@@ -1464,7 +1503,9 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	argv += 10;
 	argc -= 10;
-
+#ifdef SEC_HEX_DEBUG
+	get_b_info(v->data_dev->name);
+#endif
 	/* Optional parameters */
 	if (argc) {
 		as.argc = argc;
@@ -1571,6 +1612,10 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->per_io_data_size = roundup(ti->per_io_data_size,
 				       __alignof__(struct dm_verity_io));
 
+#ifdef SEC_HEX_DEBUG
+	if (!verity_fec_is_enabled(v))
+		add_fec_off_cnt(v->data_dev->name);
+#endif
 	verity_verify_sig_opts_cleanup(&verify_args);
 
 	dm_audit_log_ctr(DM_MSG_PREFIX, ti, 1);
@@ -1579,6 +1624,9 @@ static int verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 bad:
 
+#ifdef SEC_HEX_DEBUG
+	add_fec_off_cnt("bad");
+#endif
 	verity_verify_sig_opts_cleanup(&verify_args);
 	dm_audit_log_ctr(DM_MSG_PREFIX, ti, 0);
 	verity_dtr(ti);

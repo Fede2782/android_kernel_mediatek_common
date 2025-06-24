@@ -17,6 +17,9 @@
 #include <linux/bio.h>
 #include <linux/sched/signal.h>
 #include <linux/migrate.h>
+#ifndef __GENKSYMS__
+#include <linux/cleancache.h>
+#endif
 #include "trace.h"
 
 #include "../internal.h"
@@ -354,6 +357,15 @@ static loff_t iomap_readpage_iter(const struct iomap_iter *iter,
 
 	if (iomap_block_needs_zeroing(iter, pos)) {
 		folio_zero_range(folio, poff, plen);
+		iomap_set_range_uptodate(folio, poff, plen);
+		goto done;
+	}
+
+	if (iomap->type == IOMAP_MAPPED)
+		SetPageMappedToDisk(&folio->page);
+
+	if (cleancache_get_page(&folio->page) == 0) {
+		BUG_ON(iomap->type != IOMAP_MAPPED);
 		iomap_set_range_uptodate(folio, poff, plen);
 		goto done;
 	}

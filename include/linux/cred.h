@@ -16,6 +16,10 @@
 #include <linux/sched.h>
 #include <linux/sched/user.h>
 
+#ifdef CONFIG_KDP
+#include <linux/kdp.h>
+#endif
+
 struct cred;
 struct inode;
 
@@ -145,6 +149,16 @@ struct cred {
 	};
 } __randomize_layout;
 
+#ifdef CONFIG_KDP
+struct cred_kdp {
+	struct cred cred;
+	atomic_long_t *use_cnt;
+	struct task_struct *bp_task;
+	void *bp_pgd;
+	unsigned long long type;
+};
+#endif
+
 extern void __put_cred(struct cred *);
 extern void exit_creds(struct task_struct *);
 extern int copy_creds(struct task_struct *, unsigned long);
@@ -180,10 +194,33 @@ static inline bool cap_ambient_invariant_ok(const struct cred *cred)
  */
 static inline struct cred *get_new_cred(struct cred *cred)
 {
+#ifdef CONFIG_KDP
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		kdp_usecount_inc(cred);
+	else
+		atomic_long_inc(&cred->usage);
+#else
 	atomic_long_inc(&cred->usage);
+#endif
 	return cred;
 }
 
+#ifdef CONFIG_KDP
+static inline struct cred *get_new_cred_module(struct cred *cred)
+{
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		atomic_long_inc(((struct cred_kdp *)cred)->use_cnt);
+	else
+		atomic_long_inc(&cred->usage);
+	return cred;
+}
+#else
+static inline struct cred *get_new_cred_module(struct cred *cred)
+{
+	atomic_long_inc(&cred->usage);
+	return cred;
+}
+#endif
 /**
  * get_cred - Get a reference on a set of credentials
  * @cred: The credentials to reference
@@ -202,18 +239,57 @@ static inline const struct cred *get_cred(const struct cred *cred)
 	struct cred *nonconst_cred = (struct cred *) cred;
 	if (!cred)
 		return cred;
+#ifdef CONFIG_KDP
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		kdp_set_cred_non_rcu(nonconst_cred, 0);
+	else
+		nonconst_cred->non_rcu = 0;
+#else
 	nonconst_cred->non_rcu = 0;
+#endif
 	return get_new_cred(nonconst_cred);
 }
+
+#ifdef CONFIG_KDP
+static inline const struct cred *get_cred_module(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return cred;
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		GET_ROCRED_RCU(cred)->non_rcu = 0;
+	else
+		nonconst_cred->non_rcu = 0;
+	return get_new_cred_module(nonconst_cred);
+}
+#else
+static inline const struct cred *get_cred_module(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return cred;
+	nonconst_cred->non_rcu = 0;
+	return get_new_cred_module(nonconst_cred);
+}
+#endif
 
 static inline const struct cred *get_cred_rcu(const struct cred *cred)
 {
 	struct cred *nonconst_cred = (struct cred *) cred;
 	if (!cred)
 		return NULL;
+#ifdef CONFIG_KDP
+	if (!kdp_usecount_inc_not_zero(nonconst_cred))
+		return NULL;
+#else
 	if (!atomic_long_inc_not_zero(&nonconst_cred->usage))
 		return NULL;
+#endif
+#ifdef CONFIG_KDP
+	kdp_set_cred_non_rcu(nonconst_cred, 0);
+#else
 	nonconst_cred->non_rcu = 0;
+#endif
 	return cred;
 }
 
@@ -233,10 +309,47 @@ static inline void put_cred(const struct cred *_cred)
 	struct cred *cred = (struct cred *) _cred;
 
 	if (cred) {
+#ifdef CONFIG_KDP
+		if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC) {
+			if (kdp_usecount_dec_and_test(cred))
+				__put_cred(cred);
+		} else {
+			if (atomic_long_dec_and_test(&(cred)->usage))
+				__put_cred(cred);
+		}
+#else
+		if (atomic_long_dec_and_test(&(cred)->usage))
+			__put_cred(cred);
+#endif
+	}
+}
+
+#ifdef CONFIG_KDP
+static inline void put_cred_module(const struct cred *_cred)
+{
+	struct cred *cred = (struct cred *) _cred;
+
+	if (cred) {
+		if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC) {
+			if (atomic_long_dec_and_test(((struct cred_kdp *)cred)->use_cnt))
+				__put_cred(cred);
+		} else {
+			if (atomic_long_dec_and_test(&(cred)->usage))
+				__put_cred(cred);
+		}
+	}
+}
+#else
+static inline void put_cred_module(const struct cred *_cred)
+{
+	struct cred *cred = (struct cred *) _cred;
+
+	if (cred) {
 		if (atomic_long_dec_and_test(&(cred)->usage))
 			__put_cred(cred);
 	}
 }
+#endif
 
 /**
  * current_cred - Access the current task's subjective credentials
@@ -279,6 +392,8 @@ static inline void put_cred(const struct cred *_cred)
 #define get_current_cred()				\
 	(get_cred(current_cred()))
 
+#define get_current_cred_module()				\
+	(get_cred_module(current_cred()))
 /**
  * get_current_user - Get the current task's user_struct
  *

@@ -211,3 +211,6 @@
   usb_set_device_state
   yield
   android_create_function_device
+  kdp_set_cred_non_rcu
+  kdp_usecount_dec_and_test
+  kdp_usecount_inc

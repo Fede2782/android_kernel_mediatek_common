@@ -2074,3 +2074,123 @@ const struct file_operations proc_pid_numa_maps_operations = {
 };
 
 #endif /* CONFIG_NUMA */
+
+#ifdef CONFIG_IO_RECORD
+#include <linux/io_record.h>
+
+struct proc_filemap_private {
+	struct proc_maps_private maps_private;
+	bool show_list;
+};
+
+static atomic_t filemap_fd_opened = ATOMIC_INIT(0);
+
+static int show_filemap(struct seq_file *m, void *v)
+{
+	struct vm_area_struct *vma = v;
+	struct file *file = vma->vm_file;
+	struct proc_filemap_private *priv = m->private;
+	char strbuf[MAX_FILEPATH_LEN];
+	char *path;
+
+	if (!file || !priv->show_list)
+		return 0;
+
+	path = d_path(&file->f_path, strbuf, MAX_FILEPATH_LEN);
+	if (IS_ERR(path))
+		return 0;
+
+	if (!strncmp(path, "/data", 5) || !strncmp(path, "/system", 7)) {
+		seq_puts(m, path);
+		seq_putc(m, '\n');
+	}
+	return 0;
+}
+
+static const struct seq_operations proc_pid_filemap_op = {
+	.start	= m_start,
+	.next	= m_next,
+	.stop	= m_stop,
+	.show	= show_filemap,
+};
+
+static int pid_filemap_list_open(struct inode *inode, struct file *file)
+{
+	struct proc_filemap_private *priv = __seq_open_private(file,
+			&proc_pid_filemap_op, sizeof(struct proc_filemap_private));
+
+	if (!priv)
+		return -ENOMEM;
+	if (atomic_inc_return(&filemap_fd_opened) > 1) {
+		atomic_dec(&filemap_fd_opened);
+		return -EINVAL;
+	}
+
+	priv->maps_private.inode = inode;
+	priv->maps_private.mm = proc_mem_open(inode, PTRACE_MODE_READ);
+	priv->show_list = true;
+	if (IS_ERR(priv->maps_private.mm)) {
+		atomic_dec(&filemap_fd_opened);
+		seq_release_private(inode, file);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int proc_filemap_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *seq = file->private_data;
+	struct proc_filemap_private *priv = seq->private;
+
+	if (priv->maps_private.mm)
+		mmdrop(priv->maps_private.mm);
+
+	atomic_dec(&filemap_fd_opened);
+	return seq_release_private(inode, file);
+}
+
+const struct file_operations proc_pid_filemap_list_ops = {
+	.open		= pid_filemap_list_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= proc_filemap_release,
+};
+
+static ssize_t pid_io_record_read(struct file *file, char __user *buf,
+			size_t count, loff_t *ppos)
+{
+	return io_record_read(buf, count, ppos);
+}
+
+static ssize_t pid_io_record_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *ppos)
+{
+	struct task_struct *task;
+	char buffer[PROC_NUMBUF];
+	int rv, type;
+	bool ret;
+
+	memset(buffer, 0, sizeof(buffer));
+	count = min_t(size_t, count, sizeof(buffer) - 1);
+	if (copy_from_user(buffer, buf, count))
+		return -EFAULT;
+	rv = kstrtoint(strstrip(buffer), 10, &type);
+	if (rv < 0)
+		return rv;
+
+	task = get_proc_task(file_inode(file));
+	if (!task)
+		return -EFAULT;
+
+	ret = io_record_write(task, type);
+	put_task_struct(task);
+
+	return ret ? count : -EINVAL;
+}
+
+const struct file_operations proc_pid_io_record_ops = {
+	.read		= pid_io_record_read,
+	.write		= pid_io_record_write,
+	.llseek		= noop_llseek,
+};
+#endif

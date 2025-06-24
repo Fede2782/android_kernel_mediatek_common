@@ -162,6 +162,9 @@ struct mapped_device {
 #define DMF_POST_SUSPENDING 8
 #define DMF_EMULATE_ZONE_APPEND 9
 
+/* Added for reliable write */
+#define DMF_RELIABLE_WRITE	31
+
 void disable_discard(struct mapped_device *md);
 void disable_write_zeroes(struct mapped_device *md);
 

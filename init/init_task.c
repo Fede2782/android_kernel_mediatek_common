@@ -12,6 +12,7 @@
 #include <linux/audit.h>
 #include <linux/numa.h>
 #include <linux/scs.h>
+#include <linux/task_integrity.h>
 
 #include <linux/uaccess.h>
 
@@ -55,6 +56,11 @@ unsigned long init_shadow_call_stack[SCS_SIZE / sizeof(long)]
 		__init_task_data = {
 	[(SCS_SIZE / sizeof(long)) - 1] = SCS_END_MAGIC
 };
+#endif
+
+#ifdef CONFIG_FIVE
+static struct task_integrity init_integrity =
+					INIT_TASK_INTEGRITY(init_integrity);
 #endif
 
 /*
@@ -109,8 +115,13 @@ struct task_struct init_task
 	.children	= LIST_HEAD_INIT(init_task.children),
 	.sibling	= LIST_HEAD_INIT(init_task.sibling),
 	.group_leader	= &init_task,
+#ifdef CONFIG_KDP
+	RCU_POINTER_INITIALIZER(real_cred, (struct cred *)&init_cred_kdp),
+	RCU_POINTER_INITIALIZER(cred, (struct cred *)&init_cred_kdp),
+#else
 	RCU_POINTER_INITIALIZER(real_cred, &init_cred),
 	RCU_POINTER_INITIALIZER(cred, &init_cred),
+#endif
 	.comm		= INIT_TASK_COMM,
 	.thread		= INIT_THREAD,
 	.fs		= &init_fs,
@@ -214,6 +225,7 @@ struct task_struct init_task
 	.android_vendor_data1 = {0, },
 	.android_oem_data1 = {0, },
 #endif
+	INIT_INTEGRITY(init_task)
 };
 EXPORT_SYMBOL(init_task);
 

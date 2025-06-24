@@ -135,10 +135,11 @@ static inline enum zone_type __gfp_zone(gfp_t flags)
 					 ((1 << GFP_ZONES_SHIFT) - 1);
 	VM_BUG_ON((GFP_ZONE_BAD >> bit) & 1);
 
+#if !defined(CONFIG_ARM)
 	if ((flags & __GFP_COMP) &&
 	    (!static_branch_unlikely(&movablecore_enabled) || (flags & __GFP_MOVABLE)))
 		return LAST_VIRT_ZONE;
-
+#endif
 	return z;
 }
 

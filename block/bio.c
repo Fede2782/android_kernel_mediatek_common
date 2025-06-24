@@ -903,7 +903,7 @@ static inline bool bio_full(struct bio *bio, unsigned len)
 {
 	if (bio->bi_vcnt >= bio->bi_max_vecs)
 		return true;
-	if (bio->bi_iter.bi_size > UINT_MAX - len)
+	if (bio->bi_iter.bi_size > BIO_MAX_BYTES - len)
 		return true;
 	return false;
 }
@@ -971,6 +971,10 @@ int bio_add_hw_page(struct request_queue *q, struct bio *bio,
 		struct page *page, unsigned int len, unsigned int offset,
 		unsigned int max_sectors, bool *same_page)
 {
+	unsigned int bio_max_sectors = BIO_MAX_BYTES >> SECTOR_SHIFT;
+
+	max_sectors = min(max_sectors, bio_max_sectors);
+
 	if (WARN_ON_ONCE(bio_flagged(bio, BIO_CLONED)))
 		return 0;
 
@@ -1100,7 +1104,7 @@ int bio_add_page(struct bio *bio, struct page *page,
 
 	if (WARN_ON_ONCE(bio_flagged(bio, BIO_CLONED)))
 		return 0;
-	if (bio->bi_iter.bi_size > UINT_MAX - len)
+	if (bio->bi_iter.bi_size > BIO_MAX_BYTES - len)
 		return 0;
 
 	if (bio->bi_vcnt > 0 &&
@@ -1196,7 +1200,7 @@ static int bio_iov_add_page(struct bio *bio, struct page *page,
 {
 	bool same_page = false;
 
-	if (WARN_ON_ONCE(bio->bi_iter.bi_size > UINT_MAX - len))
+	if (WARN_ON_ONCE(bio->bi_iter.bi_size > BIO_MAX_BYTES - len))
 		return -EIO;
 
 	if (bio->bi_vcnt > 0 &&
@@ -1268,7 +1272,7 @@ static int __bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
 	 * the iov data will be picked up in the next bio iteration.
 	 */
 	size = iov_iter_extract_pages(iter, &pages,
-				      UINT_MAX - bio->bi_iter.bi_size,
+				      BIO_MAX_BYTES - bio->bi_iter.bi_size,
 				      nr_pages, extraction_flags, &offset);
 	if (unlikely(size <= 0))
 		return size ? size : -EFAULT;

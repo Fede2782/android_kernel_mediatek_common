@@ -24,6 +24,10 @@
 
 #include "clk.h"
 
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+#define CLK_REF_CNT_ERROR -1
+#endif
+
 static DEFINE_SPINLOCK(enable_lock);
 static DEFINE_MUTEX(prepare_lock);
 
@@ -106,6 +110,10 @@ struct clk {
 	struct device *dev;
 	const char *dev_id;
 	const char *con_id;
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+	int dev_prepare_cnt;
+	int dev_enable_cnt;
+#endif
 	unsigned long min_rate;
 	unsigned long max_rate;
 	unsigned int exclusive_count;
@@ -1088,6 +1096,22 @@ void clk_unprepare(struct clk *clk)
 	if (IS_ERR_OR_NULL(clk))
 		return;
 
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+	clk_prepare_lock();
+	if (clk->dev && clk->core) {
+		if (WARN(clk->dev_prepare_cnt == 0, "%s(%s) already unprepared!\n",
+				clk->core->name, dev_name(clk->dev))) {
+			clk->dev_prepare_cnt = CLK_REF_CNT_ERROR;
+			clk_prepare_unlock();
+			return;
+		}
+
+		if (clk->dev_prepare_cnt > 0)
+			clk->dev_prepare_cnt--;
+	}
+	clk_prepare_unlock();
+#endif
+
 	clk_core_unprepare_lock(clk->core);
 }
 EXPORT_SYMBOL_GPL(clk_unprepare);
@@ -1169,9 +1193,43 @@ int clk_prepare(struct clk *clk)
 	if (!clk)
 		return 0;
 
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+	clk_prepare_lock();
+	if ((clk->dev && clk->core) && (clk->dev_prepare_cnt != CLK_REF_CNT_ERROR))
+		clk->dev_prepare_cnt++;
+	clk_prepare_unlock();
+#endif
+
 	return clk_core_prepare_lock(clk->core);
 }
 EXPORT_SYMBOL_GPL(clk_prepare);
+
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+void dump_clk_user_info(struct clk_hw *hw)
+{
+	struct clk *clk_user;
+	struct clk_core *core = hw->core;
+
+	if (!core)
+		return;
+
+	clk_prepare_lock();
+	pr_info("[clk_name %s, prepare_count: %d, enable_count: %d]\n",
+		core->name,
+		core->prepare_count,
+		core->enable_count);
+
+	hlist_for_each_entry(clk_user, &core->clks, clks_node) {
+		if (clk_user->dev && !strcmp(core->name, clk_user->core->name))
+			pr_info("\t[dev_name: %s, dev_prepare_cnt: %d, dev_enable_cnt: %d]\n",
+				dev_name(clk_user->dev),
+				clk_user->dev_prepare_cnt,
+				clk_user->dev_enable_cnt);
+	}
+	clk_prepare_unlock();
+}
+EXPORT_SYMBOL_GPL(dump_clk_user_info);
+#endif
 
 static void clk_core_disable(struct clk_core *core)
 {
@@ -1225,6 +1283,24 @@ void clk_disable(struct clk *clk)
 {
 	if (IS_ERR_OR_NULL(clk))
 		return;
+
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+	unsigned long flags;
+
+	flags = clk_enable_lock();
+	if (clk->dev && clk->core) {
+		if (WARN(clk->dev_enable_cnt == 0, "%s(%s) already disabled!\n",
+				clk->core->name, dev_name(clk->dev))) {
+			clk->dev_enable_cnt = CLK_REF_CNT_ERROR;
+			clk_enable_unlock(flags);
+			return;
+		}
+
+		if (clk->dev_enable_cnt > 0)
+			clk->dev_enable_cnt--;
+	}
+	clk_enable_unlock(flags);
+#endif
 
 	clk_core_disable_lock(clk->core);
 }
@@ -1390,6 +1466,15 @@ int clk_enable(struct clk *clk)
 {
 	if (!clk)
 		return 0;
+
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+	unsigned long flags;
+
+	flags = clk_enable_lock();
+	if ((clk->dev && clk->core) && (clk->dev_enable_cnt != CLK_REF_CNT_ERROR))
+		clk->dev_enable_cnt++;
+	clk_enable_unlock(flags);
+#endif
 
 	return clk_core_enable_lock(clk->core);
 }

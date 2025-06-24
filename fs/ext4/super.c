@@ -32,6 +32,7 @@
 #include <linux/vfs.h>
 #include <linux/random.h>
 #include <linux/mount.h>
+#include <uapi/linux/mount.h>
 #include <linux/namei.h>
 #include <linux/quotaops.h>
 #include <linux/seq_file.h>
@@ -4645,6 +4646,10 @@ static int ext4_init_metadata_csum(struct super_block *sb, struct ext4_super_blo
 			 "invalid superblock checksum.  Run e2fsck?");
 		return -EFSBADCRC;
 	}
+
+#ifdef CONFIG_FIVE
+	sb->s_flags |= MS_I_VERSION;
+#endif
 
 	/* Precompute checksum seed for all metadata */
 	if (ext4_has_feature_csum_seed(sb))

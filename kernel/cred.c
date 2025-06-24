@@ -22,6 +22,10 @@
 
 #include <trace/hooks/creds.h>
 
+#ifdef CONFIG_KDP
+#include <linux/kdp.h>
+#endif
+
 #if 0
 #define kdebug(FMT, ...)						\
 	printk("[%-5.5s%5u] " FMT "\n",					\
@@ -43,8 +47,13 @@ static struct group_info init_groups = { .usage = ATOMIC_INIT(2) };
 /*
  * The initial credentials for the initial task
  */
-struct cred init_cred = {
-	.usage			= ATOMIC_INIT(4),
+struct cred init_cred
+	= {
+#ifdef CONFIG_KDP
+	.usage			= ATOMIC_LONG_INIT(KDP_CRED_MAGIC + 4),
+#else
+	.usage			= ATOMIC_LONG_INIT(4),
+#endif
 	.uid			= GLOBAL_ROOT_UID,
 	.gid			= GLOBAL_ROOT_GID,
 	.suid			= GLOBAL_ROOT_UID,
@@ -63,6 +72,41 @@ struct cred init_cred = {
 	.group_info		= &init_groups,
 	.ucounts		= &init_ucounts,
 };
+
+#ifdef CONFIG_KDP
+struct cred_kdp_init init_cred_use_cnt = {
+	.use_cnt = ATOMIC_LONG_INIT(4),
+	.ro_rcu_head_init = {
+		.non_rcu = 0,
+		.bp_cred = NULL,
+	},
+};
+
+struct cred_kdp init_cred_kdp __kdp_ro = {
+	.cred.usage			= ATOMIC_LONG_INIT(KDP_CRED_MAGIC + 4),
+	.cred.uid			= GLOBAL_ROOT_UID,
+	.cred.gid			= GLOBAL_ROOT_GID,
+	.cred.suid			= GLOBAL_ROOT_UID,
+	.cred.sgid			= GLOBAL_ROOT_GID,
+	.cred.euid			= GLOBAL_ROOT_UID,
+	.cred.egid			= GLOBAL_ROOT_GID,
+	.cred.fsuid			= GLOBAL_ROOT_UID,
+	.cred.fsgid			= GLOBAL_ROOT_GID,
+	.cred.securebits		= SECUREBITS_DEFAULT,
+	.cred.cap_inheritable	= CAP_EMPTY_SET,
+	.cred.cap_permitted		= CAP_FULL_SET,
+	.cred.cap_effective		= CAP_FULL_SET,
+	.cred.cap_bset		= CAP_FULL_SET,
+	.cred.user			= INIT_USER,
+	.cred.user_ns		= &init_user_ns,
+	.cred.group_info		= &init_groups,
+	.cred.ucounts		= &init_ucounts,
+	.use_cnt = (atomic_long_t *)&init_cred_use_cnt,
+	.bp_task = &init_task,
+	.bp_pgd	= NULL,
+	.type = 0,
+};
+#endif
 
 /*
  * The RCU callback to actually dispose of a set of credentials
@@ -102,14 +146,26 @@ void __put_cred(struct cred *cred)
 	kdebug("__put_cred(%p{%ld})", cred,
 	       atomic_long_read(&cred->usage));
 
+#ifdef CONFIG_KDP
+	BUG_ON(kdp_get_usecount(cred) != 0);
+#else
 	BUG_ON(atomic_long_read(&cred->usage) != 0);
+#endif
+
+#ifdef CONFIG_KDP
+	if (cred == current->cred)
+		pr_info("[KDP] cred->security: 0x%lx\n", (unsigned long) cred->security);
+#endif
 	BUG_ON(cred == current->cred);
 	BUG_ON(cred == current->real_cred);
-
+#ifdef CONFIG_KDP
+	kdp_put_cred_rcu(cred, (void *)put_cred_rcu);
+#else
 	if (cred->non_rcu)
 		put_cred_rcu(&cred->rcu);
 	else
 		call_rcu(&cred->rcu, put_cred_rcu);
+#endif
 }
 EXPORT_SYMBOL(__put_cred);
 
@@ -294,19 +350,25 @@ int copy_creds(struct task_struct *p, unsigned long clone_flags)
 	p->cached_requested_key = NULL;
 #endif
 
-	if (
-#ifdef CONFIG_KEYS
-		!p->cred->thread_keyring &&
+#ifdef CONFIG_KDP
+	if (!kdp_enable) {
 #endif
-		clone_flags & CLONE_THREAD
-	    ) {
-		p->real_cred = get_cred(p->cred);
-		get_cred(p->cred);
-		kdebug("share_creds(%p{%ld})",
-		       p->cred, atomic_long_read(&p->cred->usage));
-		inc_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
-		return 0;
+		if (
+#ifdef CONFIG_KEYS
+			!p->cred->thread_keyring &&
+#endif
+			clone_flags & CLONE_THREAD
+			) {
+			p->real_cred = get_cred(p->cred);
+			get_cred(p->cred);
+			kdebug("share_creds(%p{%ld})",
+				p->cred, atomic_long_read(&p->cred->usage));
+			inc_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
+			return 0;
+		}
+#ifdef CONFIG_KDP
 	}
+#endif
 
 	new = prepare_creds();
 	if (!new)
@@ -340,8 +402,19 @@ int copy_creds(struct task_struct *p, unsigned long clone_flags)
 	}
 #endif
 
+#ifdef CONFIG_KDP
+	if (kdp_enable) {
+		p->cred = p->real_cred = prepare_ro_creds(new, CMD_COPY_CREDS, (u64)p);
+		inc_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
+		put_cred(new);
+	} else {
+		p->cred = p->real_cred = get_cred(new);
+		inc_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
+	}
+#else
 	p->cred = p->real_cred = get_cred(new);
 	inc_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
+#endif
 	return 0;
 
 error_put:
@@ -397,7 +470,11 @@ int commit_creds(struct cred *new)
 	       atomic_long_read(&new->usage));
 
 	BUG_ON(task->cred != old);
+#ifdef CONFIG_KDP
+	BUG_ON(kdp_get_usecount(new) < 1);
+#else
 	BUG_ON(atomic_long_read(&new->usage) < 1);
+#endif
 
 	get_cred(new); /* we will require a ref for the subj creds too */
 
@@ -434,9 +511,26 @@ int commit_creds(struct cred *new)
 	 */
 	if (new->user != old->user || new->user_ns != old->user_ns)
 		inc_rlimit_ucounts(new->ucounts, UCOUNT_RLIMIT_NPROC, 1);
+#ifdef CONFIG_KDP
+	if (kdp_enable) {
+		struct cred *new_ro;
+
+		new_ro = prepare_ro_creds(new, CMD_COMMIT_CREDS, 0);
+
+		rcu_assign_pointer(task->real_cred, new_ro);
+		rcu_assign_pointer(task->cred, new_ro);
+		trace_android_rvh_commit_creds(task, new_ro);
+	} else {
+		rcu_assign_pointer(task->real_cred, new);
+		rcu_assign_pointer(task->cred, new);
+		trace_android_rvh_commit_creds(task, new);
+	}
+#else
 	rcu_assign_pointer(task->real_cred, new);
 	rcu_assign_pointer(task->cred, new);
 	trace_android_rvh_commit_creds(task, new);
+#endif
+
 	if (new->user != old->user || new->user_ns != old->user_ns)
 		dec_rlimit_ucounts(old->ucounts, UCOUNT_RLIMIT_NPROC, 1);
 
@@ -452,7 +546,12 @@ int commit_creds(struct cred *new)
 	    !gid_eq(new->sgid,  old->sgid) ||
 	    !gid_eq(new->fsgid, old->fsgid))
 		proc_id_connector(task, PROC_EVENT_GID);
-
+#ifdef CONFIG_KDP
+	if (kdp_enable) {
+		put_cred(new);
+		put_cred(new);
+	}
+#endif
 	/* release the old obj and subj refs both */
 	put_cred(old);
 	put_cred(old);
@@ -472,8 +571,13 @@ void abort_creds(struct cred *new)
 	kdebug("abort_creds(%p{%ld})", new,
 	       atomic_long_read(&new->usage));
 
-	BUG_ON(atomic_long_read(&new->usage) < 1);
-	put_cred(new);
+#ifdef CONFIG_KDP
+	if (is_kdp_protect_addr((unsigned long)new))
+		BUG_ON(atomic_long_read(((struct cred_kdp *)new)->use_cnt) < 1);
+	else
+#endif
+		BUG_ON(atomic_long_read(&new->usage) < 1);
+		put_cred(new);
 }
 EXPORT_SYMBOL(abort_creds);
 
@@ -500,8 +604,23 @@ const struct cred *override_creds(const struct cred *new)
 	 * visible to other threads under RCU.
 	 */
 	get_new_cred((struct cred *)new);
+#ifdef CONFIG_KDP
+	if (kdp_enable) {
+		volatile unsigned int kdp_use_count = kdp_get_usecount((struct cred *)new);
+		struct cred *new_ro;
+
+		new_ro = prepare_ro_creds((struct cred *)new, CMD_OVRD_CREDS, kdp_use_count);
+		GET_ROCRED_RCU(new_ro)->reflected_cred = (void *)new;
+		rcu_assign_pointer(current->cred, new_ro);
+		trace_android_rvh_override_creds(current, new_ro);
+	} else {
+		rcu_assign_pointer(current->cred, new);
+		trace_android_rvh_override_creds(current, new);
+	}
+#else
 	rcu_assign_pointer(current->cred, new);
 	trace_android_rvh_override_creds(current, new);
+#endif
 
 	kdebug("override_creds() = %p{%ld}", old,
 	       atomic_long_read(&old->usage));
@@ -525,6 +644,15 @@ void revert_creds(const struct cred *old)
 
 	rcu_assign_pointer(current->cred, old);
 	trace_android_rvh_revert_creds(current, old);
+#ifdef CONFIG_KDP
+	if (kdp_enable) {
+		if (is_kdp_protect_addr((unsigned long)override)) {
+			if (GET_ROCRED_RCU(override)->reflected_cred)
+				put_cred((struct cred *)GET_ROCRED_RCU(override)->reflected_cred);
+			put_cred(override);
+		}
+	}
+#endif
 	put_cred(override);
 }
 EXPORT_SYMBOL_NS(revert_creds, ANDROID_GKI_VFS_EXPORT_ONLY);
@@ -597,7 +725,11 @@ int set_cred_ucounts(struct cred *new)
 	if (!(new_ucounts = alloc_ucounts(new->user_ns, new->uid)))
 		return -EAGAIN;
 
+#ifdef CONFIG_KDP
+	set_rocred_ucounts(new, new_ucounts);
+#else
 	new->ucounts = new_ucounts;
+#endif
 	put_ucounts(old_ucounts);
 
 	return 0;
@@ -611,6 +743,9 @@ void __init cred_init(void)
 	/* allocate a slab in which we can store credentials */
 	cred_jar = kmem_cache_create("cred_jar", sizeof(struct cred), 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT, NULL);
+#ifdef CONFIG_KDP
+	kdp_cred_init();
+#endif
 }
 
 /**

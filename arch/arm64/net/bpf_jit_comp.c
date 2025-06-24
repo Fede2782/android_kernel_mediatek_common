@@ -26,6 +26,10 @@
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/bpf_jit_comp.h>
 
+#ifdef CONFIG_RKP
+#include <linux/rkp.h>
+#endif
+
 #define TMP_REG_1 (MAX_BPF_JIT_REG + 0)
 #define TMP_REG_2 (MAX_BPF_JIT_REG + 1)
 #define TCALL_CNT (MAX_BPF_JIT_REG + 2)
@@ -1661,6 +1665,9 @@ skip_init_ctx:
 	prog->bpf_func = (void *)ctx.image;
 	prog->jited = 1;
 	prog->jited_len = prog_size;
+#ifdef CONFIG_RKP
+	uh_call(UH_APP_RKP, RKP_BPF_LOAD, (u64)header, (u64)header->size, 0, 0);
+#endif
 
 	if (!prog->is_func || extra_pass) {
 		int i;

@@ -714,6 +714,14 @@ static void __blk_mq_free_request(struct request *rq)
 		blk_mq_put_tag(hctx->tags, ctx, rq->tag);
 	if (sched_tag != BLK_MQ_NO_TAG)
 		blk_mq_put_tag(hctx->sched_tags, ctx, sched_tag);
+
+	if (!__blk_mq_active_requests(hctx)) {
+		if (rq->tag != BLK_MQ_NO_TAG)
+			blk_mq_tag_wakeup_all(hctx->tags, false);
+		if (sched_tag != BLK_MQ_NO_TAG)
+			blk_mq_tag_wakeup_all(hctx->sched_tags, false);
+	}
+
 	blk_mq_sched_restart(hctx);
 	blk_queue_exit(q);
 }
@@ -1177,13 +1185,19 @@ static inline bool blk_mq_complete_need_ipi(struct request *rq)
 	return cpu_online(rq->mq_ctx->cpu);
 }
 
-static void blk_mq_complete_send_ipi(struct request *rq)
+static int blk_mq_complete_send_ipi(struct request *rq)
 {
 	unsigned int cpu;
+	int ret = 0;
 
 	cpu = rq->mq_ctx->cpu;
-	if (llist_add(&rq->ipi_list, &per_cpu(blk_cpu_done, cpu)))
-		smp_call_function_single_async(cpu, &per_cpu(blk_cpu_csd, cpu));
+	if (llist_add(&rq->ipi_list, &per_cpu(blk_cpu_done, cpu))) {
+		ret = smp_call_function_single_async(cpu, &per_cpu(blk_cpu_csd, cpu));
+		if (ret)
+			llist_del_first(&per_cpu(blk_cpu_done, cpu));
+	}
+
+	return ret;
 }
 
 static void blk_mq_raise_softirq(struct request *rq)
@@ -1211,10 +1225,9 @@ bool blk_mq_complete_request_remote(struct request *rq)
 	     rq->cmd_flags & REQ_POLLED)
 		return false;
 
-	if (blk_mq_complete_need_ipi(rq)) {
-		blk_mq_complete_send_ipi(rq);
-		return true;
-	}
+	if (blk_mq_complete_need_ipi(rq))
+		if (!blk_mq_complete_send_ipi(rq))
+			return true;
 
 	if (rq->q->nr_hw_queues == 1) {
 		blk_mq_raise_softirq(rq);

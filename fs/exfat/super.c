@@ -18,6 +18,7 @@
 #include <linux/nls.h>
 #include <linux/buffer_head.h>
 #include <linux/magic.h>
+#include <linux/fat_common.h>
 
 #include "exfat_raw.h"
 #include "exfat_fs.h"
@@ -35,10 +36,17 @@ static void exfat_put_super(struct super_block *sb)
 {
 	struct exfat_sb_info *sbi = EXFAT_SB(sb);
 
+	exfat_info(sb, "trying to unmount(r%c)...", sb_rdonly(sb) ? 'o' : 'w');
+	exfat_stlog(sb, "trying to unmount(r%c)...",
+		    sb_rdonly(sb) ? 'o' : 'w');
+
 	mutex_lock(&sbi->s_lock);
 	exfat_free_bitmap(sbi);
 	brelse(sbi->boot_bh);
 	mutex_unlock(&sbi->s_lock);
+
+	exfat_info(sb, "unmounted successfully!");
+	exfat_stlog(sb, "unmounted successfully!");
 }
 
 static int exfat_sync_fs(struct super_block *sb, int wait)
@@ -521,6 +529,8 @@ static int exfat_read_boot_sector(struct super_block *sb)
 	if (exfat_calibrate_blocksize(sb, 1 << p_boot->sect_size_bits))
 		return -EIO;
 
+	exfat_stlog_bs(sb, p_boot);
+
 	return 0;
 }
 
@@ -620,6 +630,9 @@ static int exfat_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct inode *root_inode;
 	int err;
 
+	exfat_info(sb, "trying to mount(r%c)...", sb_rdonly(sb) ? 'o' : 'w');
+	exfat_stlog(sb, "trying to mount(r%c)...", sb_rdonly(sb) ? 'o' : 'w');
+
 	if (opts->allow_utime == (unsigned short)-1)
 		opts->allow_utime = ~opts->fs_dmask & 0022;
 
@@ -639,6 +652,7 @@ static int exfat_fill_super(struct super_block *sb, struct fs_context *fc)
 	err = __exfat_fill_super(sb);
 	if (err) {
 		exfat_err(sb, "failed to recognize exfat type");
+		exfat_stlog(sb, "failed to recognize exfat bs");
 		goto check_nls_io;
 	}
 
@@ -687,6 +701,8 @@ static int exfat_fill_super(struct super_block *sb, struct fs_context *fc)
 		goto free_table;
 	}
 
+	exfat_info(sb, "mounted successfully!");
+	exfat_stlog(sb, "mounted successfully!");
 	return 0;
 
 put_inode:
@@ -698,6 +714,8 @@ free_table:
 	brelse(sbi->boot_bh);
 
 check_nls_io:
+	exfat_info(sb, "failed to mount! (%d)", err);
+	exfat_stlog(sb, "failed to mount! (%d)", err);
 	return err;
 }
 

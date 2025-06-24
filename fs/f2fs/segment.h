@@ -112,6 +112,8 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	(((secno) == -1) ? -1 : (secno) / (sbi)->secs_per_zone)
 #define GET_ZONE_FROM_SEG(sbi, segno)				\
 	GET_ZONE_FROM_SEC(sbi, GET_SEC_FROM_SEG(sbi, segno))
+#define GET_SECNO(sbi, blk_addr)				\
+	GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, blk_addr))
 
 #define GET_SUM_BLOCK(sbi, segno)				\
 	((sbi)->sm_info->ssa_blkaddr + (segno))
@@ -678,6 +680,9 @@ static inline int utilization(struct f2fs_sb_info *sbi)
 #define DEF_MIN_IPU_UTIL	70
 #define DEF_MIN_FSYNC_BLOCKS	8
 #define DEF_MIN_HOT_BLOCKS	16
+
+#define DEF_DISCARD_SLAB_THRESHOLD (4)		/* 4MB */
+#define DEF_UNDISCARD_THRESHOLD (128)		/* 128MB */
 
 #define SMALL_VOLUME_SEGMENTS	(16 * 512)	/* 16GB */
 

@@ -377,6 +377,9 @@ struct ufs_hba_variant_ops {
 				       unsigned long *ocqs);
 	int	(*config_esi)(struct ufs_hba *hba);
 	void	(*config_scsi_dev)(struct scsi_device *sdev);
+#if IS_ENABLED(CONFIG_MTK_UFS_DEBUG_BUILD)
+	void    (*check_bus_status)(struct ufs_hba *hba);
+#endif
 };
 
 /* clock gating state  */
@@ -1198,7 +1201,7 @@ static inline size_t ufshcd_sg_entry_size(const struct ufs_hba *hba)
 
 static inline size_t ufshcd_get_ucd_size(const struct ufs_hba *hba)
 {
-	return sizeof(struct utp_transfer_cmd_desc) + SG_ALL * ufshcd_sg_entry_size(hba);
+	return sizeof(struct utp_transfer_cmd_desc) + SG_UFS * ufshcd_sg_entry_size(hba);
 }
 
 /* Returns true if clocks can be gated. Otherwise false */

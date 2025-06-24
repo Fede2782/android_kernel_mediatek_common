@@ -18,6 +18,9 @@
 #include <linux/init_task.h>
 #include <keys/request_key_auth-type.h>
 #include "internal.h"
+#ifdef CONFIG_KDP
+#include <linux/kdp.h>
+#endif
 
 /* Session keyring create vs join semaphore */
 static DEFINE_MUTEX(key_session_mutex);
@@ -51,7 +54,11 @@ static struct key *get_user_register(struct user_namespace *user_ns)
 	if (!reg_keyring) {
 		reg_keyring = keyring_alloc(".user_reg",
 					    user_ns->owner, INVALID_GID,
+#ifdef CONFIG_KDP
+						(struct cred *)&init_cred_kdp,
+#else
 					    &init_cred,
+#endif
 					    KEY_POS_WRITE | KEY_POS_SEARCH |
 					    KEY_USR_VIEW | KEY_USR_READ,
 					    0,

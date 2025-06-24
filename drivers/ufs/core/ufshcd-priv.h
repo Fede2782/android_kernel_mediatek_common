@@ -204,6 +204,14 @@ static inline void ufshcd_vops_hibern8_notify(struct ufs_hba *hba,
 		return hba->vops->hibern8_notify(hba, cmd, status);
 }
 
+#if IS_ENABLED(CONFIG_MTK_UFS_DEBUG_BUILD)
+static inline void ufshcd_vops_check_bus_status(struct ufs_hba *hba)
+{
+	if (hba->vops && hba->vops->check_bus_status)
+		hba->vops->check_bus_status(hba);
+}
+#endif
+
 static inline int ufshcd_vops_apply_dev_quirks(struct ufs_hba *hba)
 {
 	if (hba->vops && hba->vops->apply_dev_quirks)

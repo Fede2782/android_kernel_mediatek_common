@@ -927,9 +927,7 @@ bool f2fs_sanity_check_cluster(struct dnode_of_data *dn)
 		}
 	}
 
-	f2fs_bug_on(F2FS_I_SB(dn->inode), count != cluster_size &&
-		!is_inode_flag_set(dn->inode, FI_COMPRESS_RELEASED));
-
+/* H230109-2393 : f2fs: get rid of bug_on in __f2fs_cluster_blocks() to avoid kernel panic for corrupted files */
 	return false;
 out:
 	f2fs_warn(sbi, "access invalid cluster, ino:%lu, nid:%u, ofs_in_node:%u, reason:%s",

@@ -9,6 +9,8 @@
 
 #include "fat.h"
 #include <linux/iversion.h>
+#include <linux/blkdev.h>
+#include <linux/fat_common.h>
 
 /*
  * fat_fs_error reports a file system problem that might indicate fa data
@@ -37,6 +39,7 @@ void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 	else if (opts->errors == FAT_ERRORS_RO && !sb_rdonly(sb)) {
 		sb->s_flags |= SB_RDONLY;
 		fat_msg(sb, KERN_ERR, "Filesystem has been set read-only");
+		fat_uevent_ro_remount(sb);
 	}
 }
 EXPORT_SYMBOL_GPL(__fat_fs_error);

@@ -3229,6 +3229,12 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
+	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE ||
+			(file_present && S_ISDIR(d_inode(path.dentry)->i_mode))) {
+		open_flags &= ~O_ACCMODE;
+		may_flags &= ~MAY_WRITE;
+	}
+
 	/*create file if not present */
 	if (!file_present) {
 		rc = smb2_creat(work, &parent_path, &path, name, open_flags,

@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/buffer_head.h>
 #include <linux/blk_types.h>
+#include <linux/fat_common.h>
 
 #include "exfat_raw.h"
 #include "exfat_fs.h"
@@ -43,6 +44,7 @@ void __exfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 	} else if (opts->errors == EXFAT_ERRORS_RO && !sb_rdonly(sb)) {
 		sb->s_flags |= SB_RDONLY;
 		exfat_err(sb, "Filesystem has been set read-only");
+		exfat_uevent_ro_remount(sb);
 	}
 }
 

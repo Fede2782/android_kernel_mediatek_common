@@ -77,7 +77,7 @@ enum {
 #define ADVANCED_RPMB_REQ_TIMEOUT  3000 /* 3 seconds */
 
 /* Task management command timeout */
-#define TM_CMD_TIMEOUT	100 /* msecs */
+#define TM_CMD_TIMEOUT	300 /* msecs */
 
 /* maximum number of retries for a general UIC command  */
 #define UFS_UIC_COMMAND_RETRIES 3
@@ -2451,6 +2451,9 @@ ufshcd_wait_for_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 	hba->active_uic_cmd = NULL;
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
+	if (ret)
+		ufshcd_add_uic_command_trace(hba, uic_cmd, UFS_CMD_ERR);
+
 	return ret;
 }
 
@@ -4254,6 +4257,8 @@ check_upmcrs:
 	}
 out:
 	if (ret) {
+		ufshcd_add_uic_command_trace(hba, hba->active_uic_cmd,
+					     UFS_CMD_ERR);
 		ufshcd_print_host_state(hba);
 		ufshcd_print_pwr_info(hba);
 		ufshcd_print_evt_hist(hba);
@@ -4690,7 +4695,7 @@ static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 					QUERY_FLAG_IDN_FDEVICEINIT, 0, &flag_res);
 		if (!flag_res)
 			break;
-		usleep_range(500, 1000);
+		usleep_range(5000, 10000);
 	} while (ktime_before(ktime_get(), timeout));
 
 	if (err) {
@@ -5972,9 +5977,14 @@ static void ufshcd_bkops_exception_event_handler(struct ufs_hba *hba)
 	if (curr_status < BKOPS_STATUS_PERF_IMPACT) {
 		dev_err(hba->dev, "%s: device raised urgent BKOPS exception for bkops status %d\n",
 				__func__, curr_status);
-		/* update the current status as the urgent bkops level */
-		hba->urgent_bkops_lvl = curr_status;
-		hba->is_urgent_bkops_lvl_checked = true;
+		/*
+		 * SEC does not follow this policy that BKOPS is enabled for these events
+		 * update the current status as the urgent bkops level
+		 */
+		//hba->urgent_bkops_lvl = curr_status;
+		//hba->is_urgent_bkops_lvl_checked = true;
+
+		goto out;
 	}
 
 enable_auto_bkops:
@@ -9096,7 +9106,7 @@ static const struct scsi_host_template ufshcd_driver_template = {
 	.eh_host_reset_handler   = ufshcd_eh_host_reset_handler,
 	.eh_timed_out		= ufshcd_eh_timed_out,
 	.this_id		= -1,
-	.sg_tablesize		= SG_ALL,
+	.sg_tablesize		= SG_UFS,
 	.cmd_per_lun		= UFSHCD_CMD_PER_LUN,
 	.can_queue		= UFSHCD_CAN_QUEUE,
 	.max_segment_size	= PRDT_DATA_BYTE_COUNT_MAX,

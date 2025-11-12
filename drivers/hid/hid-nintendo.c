@@ -1540,7 +1540,6 @@ static int joycon_set_rumble(struct joycon_ctlr *ctlr, u16 amp_r, u16 amp_l,
 	u16 freq_l_low;
 	u16 freq_l_high;
 	unsigned long flags;
-	int next_rq_head;
 
 	spin_lock_irqsave(&ctlr->lock, flags);
 	freq_r_low = ctlr->rumble_rl_freq;
@@ -1561,21 +1560,8 @@ static int joycon_set_rumble(struct joycon_ctlr *ctlr, u16 amp_r, u16 amp_l,
 	joycon_encode_rumble(data, freq_l_low, freq_l_high, amp);
 
 	spin_lock_irqsave(&ctlr->lock, flags);
-
-	next_rq_head = ctlr->rumble_queue_head + 1;
-	if (next_rq_head >= JC_RUMBLE_QUEUE_SIZE)
-		next_rq_head = 0;
-
-	/* Did we overrun the circular buffer?
-	 * If so, be sure we keep the latest intended rumble state.
-	 */
-	if (next_rq_head == ctlr->rumble_queue_tail) {
-		hid_dbg(ctlr->hdev, "rumble queue is full");
-		/* overwrite the prior value at the end of the circular buf */
-		next_rq_head = ctlr->rumble_queue_head;
-	}
-
-	ctlr->rumble_queue_head = next_rq_head;
+	if (++ctlr->rumble_queue_head >= JC_RUMBLE_QUEUE_SIZE)
+		ctlr->rumble_queue_head = 0;
 	memcpy(ctlr->rumble_data[ctlr->rumble_queue_head], data,
 	       JC_RUMBLE_DATA_SIZE);
 
@@ -2236,7 +2222,7 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 
 	ctlr->hdev = hdev;
 	ctlr->ctlr_state = JOYCON_CTLR_STATE_INIT;
-	ctlr->rumble_queue_head = 0;
+	ctlr->rumble_queue_head = JC_RUMBLE_QUEUE_SIZE - 1;
 	ctlr->rumble_queue_tail = 0;
 	hid_set_drvdata(hdev, ctlr);
 	mutex_init(&ctlr->output_mutex);

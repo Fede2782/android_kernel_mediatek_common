@@ -1135,7 +1135,7 @@ extern int send_sigurg(struct fown_struct *fown);
 #define sb_has_strict_encoding(sb) \
 	(sb->s_encoding_flags & SB_ENC_STRICT_MODE_FL)
 
-#if IS_ENABLED(CONFIG_UNICODE)
+#if 0 /* Doc: 2347110865 */
 #define sb_no_casefold_compat_fallback(sb) \
        (sb->s_encoding_flags & SB_ENC_NO_COMPAT_FALLBACK_FL)
 #else
@@ -1167,6 +1167,9 @@ extern int send_sigurg(struct fown_struct *fown);
 #define SB_I_PERSB_BDI	0x00000200	/* has a per-sb bdi */
 #define SB_I_TS_EXPIRY_WARNED 0x00000400 /* warned about timestamp range expiry */
 #define SB_I_RETIRED	0x00000800	/* superblock shouldn't be reused */
+#ifdef CONFIG_FREEZABLE_IN_LOOKUP
+#define SB_I_FREEZABLE_IN_LOOKUP 0x80000000 /* Freezable FS in lookup_slow */
+#endif
 
 /* Possible states of 'frozen' field */
 enum {

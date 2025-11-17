@@ -100,6 +100,7 @@ struct napi_gro_cb {
 #define NAPI_GRO_CB(skb) ((struct napi_gro_cb *)(skb)->cb)
 
 #define GRO_RECURSION_LIMIT 15
+
 static inline int gro_recursion_inc_test(struct sk_buff *skb)
 {
 	return ++NAPI_GRO_CB(skb)->recursion_counter == GRO_RECURSION_LIMIT;

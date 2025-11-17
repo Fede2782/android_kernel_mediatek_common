@@ -1639,8 +1639,6 @@ int ksmbd_vfs_get_dos_attrib_xattr(struct mnt_idmap *idmap,
 		if (ndr_decode_dos_attr(&n, da))
 			err = -EINVAL;
 		kfree(n.data);
-	} else {
-		ksmbd_debug(SMB, "failed to load dos attribute in xattr\n");
 	}
 
 	return err;
@@ -1719,8 +1717,6 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		if (rc > 0) {
 			ksmbd_kstat->file_attributes = cpu_to_le32(da.attr);
 			ksmbd_kstat->create_time = da.create_time;
-		} else {
-			ksmbd_debug(VFS, "fail to load dos attribute.\n");
 		}
 	}
 

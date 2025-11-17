@@ -438,6 +438,18 @@
 #endif
 #endif
 
+#ifdef CONFIG_UH
+#define UH_RO_SECTION						\
+	. = ALIGN(PAGE_SIZE);						\
+									\
+	.uh_ro        : AT(ADDR(.uh_ro) - LOAD_OFFSET) {	\
+		*(.rkp_ro)						\
+		*(.kdp_ro)						\
+	}
+#else
+#define UH_RO_SECTION
+#endif
+
 /*
  * Read only Data
  */
@@ -456,6 +468,9 @@
 	.rodata1          : AT(ADDR(.rodata1) - LOAD_OFFSET) {		\
 		*(.rodata1)						\
 	}								\
+									\
+	/* uH */						\
+	UH_RO_SECTION					\
 									\
 	/* PCI quirks */						\
 	.pci_fixup        : AT(ADDR(.pci_fixup) - LOAD_OFFSET) {	\

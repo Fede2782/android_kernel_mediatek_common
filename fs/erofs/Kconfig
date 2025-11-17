@@ -143,3 +143,14 @@ config EROFS_FS_PCPU_KTHREAD_HIPRI
 	  at higher priority.
 
 	  If unsure, say N.
+
+config EROFS_FS_ENABLE_LARGE_FOLIOS
+	bool "EROFS large folio enable"
+	depends on EROFS_FS
+	default n
+	help
+	  This permit erofs large folio option
+	  Samsung MX disable this option because cleancache does not support
+	  large folio yet
+
+	  If unsure, say Y.

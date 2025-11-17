@@ -13,6 +13,13 @@
 #include <linux/mmc/slot-gpio.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#ifdef CONFIG_MMC_SUPPORT_STLOG
+#include <linux/fslog.h>
+#else
+#define ST_LOG(fmt, ...)
+#endif
+
+#include <trace/hooks/mmc.h>
 
 #include "slot-gpio.h"
 
@@ -30,10 +37,26 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 {
 	/* Schedule a card detection after a debounce timeout */
 	struct mmc_host *host = dev_id;
+#ifndef CONFIG_SEC_FACTORY
 	struct mmc_gpio *ctx = host->slot.handler_priv;
+#endif
+
+	pr_info("%s: gpio cd irq, status: %s\n",
+			mmc_hostname(host),
+			mmc_gpio_get_cd(host) ? "INSERT" : "REMOVAL");
+	ST_LOG("%s: gpio cd irq, status: %s\n",
+			mmc_hostname(host),
+			mmc_gpio_get_cd(host) ? "INSERT" : "REMOVAL");
 
 	host->trigger_card_event = true;
+#ifdef CONFIG_SEC_FACTORY
+	if (mmc_gpio_get_cd(host))
+		mmc_detect_change(host, msecs_to_jiffies(50));
+	else
+		mmc_detect_change(host, 0);
+#else
 	mmc_detect_change(host, msecs_to_jiffies(ctx->cd_debounce_delay_ms));
+#endif
 
 	return IRQ_HANDLED;
 }

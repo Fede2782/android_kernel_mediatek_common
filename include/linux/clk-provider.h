@@ -1320,6 +1320,9 @@ static inline struct clk_hw *__clk_get_hw(struct clk *clk)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_MTK_DUMP_CLK_REFCNT_BY_DEVICE)
+void dump_clk_user_info(struct clk_hw *hw);
+#endif
 struct clk *clk_hw_get_clk(struct clk_hw *hw, const char *con_id);
 struct clk *devm_clk_hw_get_clk(struct device *dev, struct clk_hw *hw,
 				const char *con_id);

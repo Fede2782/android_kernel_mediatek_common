@@ -66,6 +66,14 @@
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/module.h>
 
+#ifdef CONFIG_RKP
+#include <linux/rkp.h>
+#ifdef CONFIG_UH_PKVM
+extern u64 early_module_core_text[RKP_EARLY_MODULE];
+extern u64 early_module_core_size[RKP_EARLY_MODULE];
+int rkp_mod_cnt;
+#endif
+#endif
 /*
  * Mutex protects:
  * 1) List of modules (also safely readable with preempt_disable),
@@ -706,6 +714,9 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	char name[MODULE_NAME_LEN];
 	char buf[MODULE_FLAGS_BUF_SIZE];
 	int ret, forced = 0;
+#ifdef CONFIG_RKP
+	struct module_info rkp_mod_info;
+#endif
 
 	if (!capable(CAP_SYS_MODULE) || modules_disabled)
 		return -EPERM;
@@ -768,6 +779,17 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	strscpy(last_unloaded_module.name, mod->name, sizeof(last_unloaded_module.name));
 	strscpy(last_unloaded_module.taints, module_flags(mod, buf, false), sizeof(last_unloaded_module.taints));
 
+#ifdef CONFIG_RKP
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->mem[MOD_TEXT].base;
+	rkp_mod_info.core_text_size = (u64)mod->mem[MOD_TEXT].size;
+	rkp_mod_info.core_ro_size = (u64)mod->mem[MOD_RODATA].size;
+	rkp_mod_info.init_base_va = 0;
+	rkp_mod_info.init_text_size = 0;
+
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_SET, (u64)&rkp_mod_info, 0, 0);
+#endif
 	free_module(mod);
 	/* someone could wait for the module in add_unformed_module() */
 	wake_up_all(&module_wq);
@@ -2276,7 +2298,14 @@ static int move_module(struct module *mod, struct load_info *info)
 			continue;
 		}
 		mod->mem[type].size = PAGE_ALIGN(mod->mem[type].size);
+#ifdef CONFIG_RKP
+		if (type == MOD_TEXT && mod->mem[MOD_TEXT].size != 0)
+			ptr = module_alloc_by_rkp(mod->mem[MOD_TEXT].size, mod->mem[MOD_TEXT].size);
+		else
 		ptr = module_memory_alloc(mod->mem[type].size, type);
+#else
+		ptr = module_memory_alloc(mod->mem[type].size, type);
+#endif
 		/*
                  * The pointer to these blocks of memory are stored on the module
                  * structure and we keep that around so long as the module is
@@ -2551,6 +2580,9 @@ static noinline int do_init_module(struct module *mod)
 {
 	int ret = 0;
 	struct mod_initfree *freeinit;
+#ifdef CONFIG_RKP
+	struct module_info rkp_mod_info;
+#endif
 #if defined(CONFIG_MODULE_STATS)
 	unsigned int text_size = 0, total_size = 0;
 
@@ -2621,6 +2653,17 @@ static noinline int do_init_module(struct module *mod)
 	trace_android_vh_set_mod_perm_after_init(mod);
 	mod_tree_remove_init(mod);
 	module_arch_freeing_init(mod);
+#ifdef CONFIG_RKP
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = 0;
+	rkp_mod_info.core_text_size = 0;
+	rkp_mod_info.core_ro_size = 0;
+	rkp_mod_info.init_base_va = (u64)mod->mem[MOD_INIT_TEXT].base;
+	rkp_mod_info.init_text_size = (u64)mod->mem[MOD_INIT_TEXT].size;
+
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_SET, (u64)&rkp_mod_info, 0, 0);
+#endif
 	for_class_mod_mem_type(type, init) {
 		mod->mem[type].base = NULL;
 		mod->mem[type].size = 0;
@@ -2667,6 +2710,17 @@ fail:
 				     MODULE_STATE_GOING, mod);
 	klp_module_going(mod);
 	ftrace_release_mod(mod);
+#ifdef CONFIG_RKP
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->mem[MOD_TEXT].base;
+	rkp_mod_info.core_text_size = (u64)mod->mem[MOD_TEXT].size;
+	rkp_mod_info.core_ro_size = (u64)mod->mem[MOD_RODATA].size;
+	rkp_mod_info.init_base_va = (u64)mod->mem[MOD_INIT_TEXT].base;
+	rkp_mod_info.init_text_size = (u64)mod->mem[MOD_INIT_TEXT].size;
+
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_SET, (u64)&rkp_mod_info, 0, 0);
+#endif
 	free_module(mod);
 	wake_up_all(&module_wq);
 
@@ -2771,6 +2825,9 @@ out:
 static int complete_formation(struct module *mod, struct load_info *info)
 {
 	int err;
+#ifdef CONFIG_RKP
+	struct module_info rkp_mod_info;
+#endif
 
 	mutex_lock(&module_mutex);
 
@@ -2793,6 +2850,26 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	 * but kallsyms etc. can see us.
 	 */
 	mod->state = MODULE_STATE_COMING;
+#ifdef CONFIG_RKP
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->mem[MOD_TEXT].base;
+	rkp_mod_info.core_text_size = (u64)mod->mem[MOD_TEXT].size;
+	rkp_mod_info.core_ro_size = (u64)mod->mem[MOD_RODATA].size;
+	rkp_mod_info.init_base_va = (u64)mod->mem[MOD_INIT_TEXT].base;
+	rkp_mod_info.init_text_size = (u64)mod->mem[MOD_INIT_TEXT].size;
+
+#ifdef CONFIG_UH_PKVM
+	if (!rkp_started) {
+		if (rkp_mod_cnt >= RKP_EARLY_MODULE)
+			BUG_ON(rkp_mod_cnt);
+		early_module_core_text[rkp_mod_cnt] = (u64)mod->mem[MOD_TEXT].base;
+		early_module_core_size[rkp_mod_cnt] = (u64)mod->mem[MOD_TEXT].size;
+		rkp_mod_cnt++;
+	}
+#endif
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_CLEAR, (u64)&rkp_mod_info, 0, 0);
+#endif
 	mutex_unlock(&module_mutex);
 
 	return 0;
@@ -2883,6 +2960,9 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	bool module_allocated = false;
 	long err = 0;
 	char *after_dashes;
+#ifdef CONFIG_RKP
+	struct module_info rkp_mod_info;
+#endif
 
 	/*
 	 * Do the signature check (if any) first. All that
@@ -3045,6 +3125,18 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	mutex_lock(&module_mutex);
 	module_bug_cleanup(mod);
 	mutex_unlock(&module_mutex);
+
+#ifdef CONFIG_RKP
+	rkp_mod_info.base_va = 0;
+	rkp_mod_info.vm_size = 0;
+	rkp_mod_info.core_base_va = (u64)mod->mem[MOD_TEXT].base;
+	rkp_mod_info.core_text_size = (u64)mod->mem[MOD_TEXT].size;
+	rkp_mod_info.core_ro_size = (u64)mod->mem[MOD_RODATA].size;
+	rkp_mod_info.init_base_va = (u64)mod->mem[MOD_INIT_TEXT].base;
+	rkp_mod_info.init_text_size = (u64)mod->mem[MOD_INIT_TEXT].size;
+
+	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_SET, (u64)&rkp_mod_info, 0, 0);
+#endif
 
  ddebug_cleanup:
 	ftrace_release_mod(mod);

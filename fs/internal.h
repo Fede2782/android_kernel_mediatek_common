@@ -40,6 +40,14 @@ int __block_write_begin_int(struct folio *folio, loff_t pos, unsigned len,
  */
 extern void __init chrdev_init(void);
 
+#ifdef CONFIG_PROC_DLOG
+/*
+ * dlog_hook.c
+ */
+void dlog_hook(struct dentry *dentry, struct inode *inode, struct path *path);
+void dlog_hook_rmdir(struct dentry *dentry, struct path *path);
+#endif
+
 /*
  * fs_context.c
  */

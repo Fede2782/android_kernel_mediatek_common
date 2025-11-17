@@ -93,5 +93,7 @@ ifeq ($(CONFIG_DEBUG_EFI),y)
 AFLAGS_head.o += -DVMLINUX_PATH="\"$(realpath $(objtree)/vmlinux)\""
 endif
 
+obj-$(CONFIG_UH)        += uh_entry.o
+
 # for cleaning
 subdir- += vdso vdso32

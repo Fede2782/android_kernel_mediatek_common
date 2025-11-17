@@ -24,6 +24,23 @@ static void __dma_tx_complete(void *param)
 
 	spin_lock_irqsave(&p->port.lock, flags);
 
+#ifdef CONFIG_SEC_DEBUG_PRINT_UART_TXRX
+	if (!strncmp(p->port.name, "ttyS0", 5)) {
+		int i,j;
+		int count;
+
+		//After dma tx complete and before update xmit->tail
+		pr_info(" %s: tx complete ++\n",__func__);
+		count = (dma->tx_size > 64) ? 64:dma->tx_size;
+		pr_info(" %s: tx_size:%ld\n xmit->tail[%d] count[%d]\n", __func__, dma->tx_size, xmit->tail, count);
+		for(j=0, i=xmit->tail; j < count; i++,j++) {
+			i &= UART_XMIT_SIZE - 1;
+			pr_cont("0x%02X ", *(xmit->buf+i));
+		}
+		pr_info("%s: tx complete --\n",__func__);
+	}
+#endif
+
 	dma->tx_running = 0;
 
 	uart_xmit_advance(&p->port, dma->tx_size);

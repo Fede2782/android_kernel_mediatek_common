@@ -1423,8 +1423,15 @@ static ssize_t data_role_store(struct device *dev,
 	struct typec_port *port = to_typec_port(dev);
 	int ret;
 
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s %s +\n", __func__, buf);
+#endif
 	if (!port->ops || !port->ops->dr_set) {
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+		dev_err(dev, "data role swapping not supported\n");
+#else
 		dev_dbg(dev, "data role swapping not supported\n");
+#endif
 		return -EOPNOTSUPP;
 	}
 
@@ -1445,6 +1452,9 @@ static ssize_t data_role_store(struct device *dev,
 	ret = size;
 unlock_and_ret:
 	mutex_unlock(&port->port_type_lock);
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s-\n", __func__);
+#endif
 	return ret;
 }
 
@@ -1468,13 +1478,24 @@ static ssize_t power_role_store(struct device *dev,
 	struct typec_port *port = to_typec_port(dev);
 	int ret;
 
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s %s +\n", __func__, buf);
+#endif
 	if (!port->ops || !port->ops->pr_set) {
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+		dev_err(dev, "power role swapping not supported\n");
+#else
 		dev_dbg(dev, "power role swapping not supported\n");
+#endif
 		return -EOPNOTSUPP;
 	}
 
 	if (port->pwr_opmode != TYPEC_PWR_MODE_PD) {
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+		dev_err(dev, "partner unable to swap power role\n");
+#else
 		dev_dbg(dev, "partner unable to swap power role\n");
+#endif
 		return -EIO;
 	}
 
@@ -1484,8 +1505,13 @@ static ssize_t power_role_store(struct device *dev,
 
 	mutex_lock(&port->port_type_lock);
 	if (port->port_type != TYPEC_PORT_DRP) {
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+		dev_err(dev, "port type fixed at \"%s\"",
+			     typec_port_power_roles[port->port_type]);
+#else
 		dev_dbg(dev, "port type fixed at \"%s\"",
 			     typec_port_power_roles[port->port_type]);
+#endif
 		ret = -EOPNOTSUPP;
 		goto unlock_and_ret;
 	}
@@ -1497,6 +1523,9 @@ static ssize_t power_role_store(struct device *dev,
 	ret = size;
 unlock_and_ret:
 	mutex_unlock(&port->port_type_lock);
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s-\n", __func__);
+#endif
 	return ret;
 }
 
@@ -1521,9 +1550,16 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 	int ret;
 	enum typec_port_type type;
 
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s %s +\n", __func__, buf);
+#endif
 	if (port->cap->type != TYPEC_PORT_DRP ||
 	    !port->ops || !port->ops->port_type_set) {
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+		dev_err(dev, "changing port type not supported\n");
+#else
 		dev_dbg(dev, "changing port type not supported\n");
+#endif
 		return -EOPNOTSUPP;
 	}
 
@@ -1533,7 +1569,10 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 
 	type = ret;
 	mutex_lock(&port->port_type_lock);
-
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s port_type : %d, type : %d\n",
+			__func__, port->port_type, type);
+#endif
 	if (port->port_type == type) {
 		ret = size;
 		goto unlock_and_ret;
@@ -1548,6 +1587,9 @@ port_type_store(struct device *dev, struct device_attribute *attr,
 
 unlock_and_ret:
 	mutex_unlock(&port->port_type_lock);
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s -\n", __func__);
+#endif
 	return ret;
 }
 
@@ -1867,6 +1909,10 @@ void typec_set_pwr_opmode(struct typec_port *port,
 {
 	struct device *partner_dev;
 
+#if defined(CONFIG_USB_DEBUG_DETAILED_LOG)
+	pr_info("%s pwr_opmode=%d opmode=%d\n", __func__,
+			port->pwr_opmode, opmode);
+#endif
 	if (port->pwr_opmode == opmode)
 		return;
 

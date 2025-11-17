@@ -95,6 +95,7 @@ config ARM64
 	select ARCH_SUPPORTS_LTO_CLANG if CPU_LITTLE_ENDIAN
 	select ARCH_SUPPORTS_LTO_CLANG_THIN
 	select ARCH_SUPPORTS_CFI_CLANG
+	select ARCH_SUPPORTS_AUTOFDO_CLANG
 	select ARCH_SUPPORTS_ATOMIC_RMW
 	select ARCH_SUPPORTS_INT128 if CC_HAS_INT128
 	select ARCH_SUPPORTS_NUMA_BALANCING
@@ -1608,7 +1609,7 @@ config ARCH_FORCE_MAX_ORDER
 
 config UNMAP_KERNEL_AT_EL0
 	bool "Unmap kernel when running in userspace (aka \"KAISER\")" if EXPERT
-	default y
+	default n
 	help
 	  Speculation attacks against some high-performance processors can
 	  be used to bypass MMU permission checks and leak kernel data to
@@ -2363,6 +2364,47 @@ config DMI
 	  continue to boot on existing non-UEFI platforms.
 
 endmenu # "Boot options"
+
+menu "Hypervisor"
+
+config UH
+	bool "Enable micro hypervisor feature"
+	default y
+	help
+	  It enables a micro hypervisor.
+	  It's samsung's hypervisor.
+	  RKP and etc can be loaded on it.
+	  please check a memory map for it.
+
+config UH_PKVM
+	bool "Enable uH config running on pKVM"
+	depends on UH
+	default n
+	help
+	  It enables a micro hypervisor.
+	  It's samsung's hypervisor.
+	  RKP and etc can be loaded on it.
+	  This is config for uH running on pKVM.
+
+config RKP
+	bool "Enable RKP(Realtime Kernel Protection) feature"
+	depends on UH
+	default y
+	help
+	  This solution provides the kernel protection
+	  using a security monitor located within an isolated execution environment.
+	  This isolated execution environment is either the Secure World of ARM TrustZone
+	  or a thin hypervisor that is protected by the hardware virtualization extensions.
+
+config KDP
+	bool "Enable KDP(Kernel Data Protection) feature"
+	depends on UH
+	default y
+	help
+	  Prevents unauthorized cred modification,
+	  mapping for page table.
+
+endmenu
 
 menu "Power management options"
 

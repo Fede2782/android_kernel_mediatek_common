@@ -186,13 +186,21 @@ static void __cpuidle_driver_init(struct cpuidle_driver *drv)
 			s->target_residency_ns = 0;
 		else
 			s->target_residency = div_u64(s->target_residency_ns, NSEC_PER_USEC);
-
+#ifdef CONFIG_ARM64
 		if (s->exit_latency > 0)
 			s->exit_latency_ns = mul_u32_u32(s->exit_latency, NSEC_PER_USEC);
 		else if (s->exit_latency_ns < 0)
 			s->exit_latency_ns =  0;
 		else
 			s->exit_latency = div_u64(s->exit_latency_ns, NSEC_PER_USEC);
+#else
+		if (s->exit_latency > 0)
+			s->exit_latency_ns = (u64)s->exit_latency * NSEC_PER_USEC;
+		else if (s->exit_latency_ns < 0)
+			s->exit_latency_ns =  0;
+		else
+			s->exit_latency = div_u64(s->exit_latency_ns, NSEC_PER_USEC);
+#endif
 	}
 }
 

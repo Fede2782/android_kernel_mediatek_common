@@ -1,0 +1,15 @@
+menu "Samsung user firmware compatibility"
+
+config MIN_KDP
+        bool "Support exported KDP functions"
+        default y
+        depends on !KDP
+        select INTEGRITY
+	select INTEGRITY_SIGNATURE
+	select INTEGRITY_ASYMMETRIC_KEYS
+	select INTEGRITY_TRUSTED_KEYRING
+        select INTEGRITY_AUDIT
+        help
+          It is necessary to make the shipped bluetooth driver work even with kdp disabled.
+
+endmenu

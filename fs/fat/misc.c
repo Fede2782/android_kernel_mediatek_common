@@ -9,6 +9,8 @@
 
 #include "fat.h"
 #include <linux/iversion.h>
+#include <linux/blkdev.h>
+#include <linux/fat_common.h>
 
 /*
  * fat_fs_error reports a file system problem that might indicate fa data
@@ -29,6 +31,11 @@ void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 		vaf.fmt = fmt;
 		vaf.va = &args;
 		fat_msg(sb, KERN_ERR, "error, %pV", &vaf);
+
+		/* do not call stlog after read-only remounted by errors */
+		if (opts->errors == FAT_ERRORS_RO && !sb_rdonly(sb))
+			fat_stlog(sb, "error, %pV", &vaf);
+
 		va_end(args);
 	}
 
@@ -37,6 +44,7 @@ void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 	else if (opts->errors == FAT_ERRORS_RO && !sb_rdonly(sb)) {
 		sb->s_flags |= SB_RDONLY;
 		fat_msg(sb, KERN_ERR, "Filesystem has been set read-only");
+		fat_uevent_ro_remount(sb);
 	}
 }
 EXPORT_SYMBOL_GPL(__fat_fs_error);
@@ -56,10 +64,16 @@ void _fat_msg(struct super_block *sb, const char *level, const char *fmt, ...)
 	struct va_format vaf;
 	va_list args;
 
+	/* if level is KERN_ERR, it works like fat_msg_ratelimit() */
+	if (!strncmp(level, KERN_ERR, sizeof(KERN_ERR)))
+		if (!__ratelimit(&MSDOS_SB(sb)->ratelimit))
+			return;
+
 	va_start(args, fmt);
 	vaf.fmt = fmt;
 	vaf.va = &args;
-	_printk(FAT_PRINTK_PREFIX "%pV\n", level, sb->s_id, &vaf);
+	_printk(FAT_PRINTK_PREFIX "%pV\n", level, sb->s_id,
+		MAJOR(sb->s_dev), MINOR(sb->s_dev), &vaf);
 	va_end(args);
 }
 

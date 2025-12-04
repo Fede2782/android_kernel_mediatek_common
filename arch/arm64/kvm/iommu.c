@@ -52,7 +52,7 @@ static int __init pkvm_iommu_cma_setup(struct reserved_mem *rmem)
 		kvm_info("pKVM IOMMU reserved memory not PMD-aligned\n");
 
 	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name,
-				    &kvm_iommu_cma);
+				    &kvm_iommu_cma, false);
 	if (err) {
 		kvm_err("Failed to init pKVM IOMMU reserved memory\n");
 		kvm_iommu_cma = NULL;

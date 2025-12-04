@@ -3158,6 +3158,30 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int highest_zoneidx)
 	wake_up_interruptible(&pgdat->kcompactd_wait);
 }
 
+static struct cpumask kcompactd_cpumask;
+
+static int __init early_kcompactd_cpumask_param(char *buf)
+{
+	unsigned int res;
+	int ret = kstrtouint(buf, 16, &res);
+	int i;
+
+	if (!ret) {
+		cpumask_clear(&kcompactd_cpumask);
+		for (i = 0; i < nr_cpu_ids; i++)
+			if (res & (1 << i))
+				cpumask_set_cpu(i, &kcompactd_cpumask);
+	}
+	return ret;
+}
+early_param("kcompactd_cpumask", early_kcompactd_cpumask_param);
+
+static inline const struct cpumask *get_kcompactd_cpumask(pg_data_t *pgdat)
+{
+	return !cpumask_empty(&kcompactd_cpumask) ?
+		&kcompactd_cpumask : cpumask_of_node(pgdat->node_id);
+}
+
 /*
  * The background compaction daemon, started as a kernel thread
  * from the init process.
@@ -3169,7 +3193,7 @@ static int kcompactd(void *p)
 	long default_timeout = msecs_to_jiffies(HPAGE_FRAG_CHECK_INTERVAL_MSEC);
 	long timeout = default_timeout;
 
-	const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
+	const struct cpumask *cpumask = get_kcompactd_cpumask(pgdat);
 
 	if (!cpumask_empty(cpumask))
 		set_cpus_allowed_ptr(tsk, cpumask);
@@ -3282,7 +3306,7 @@ static int kcompactd_cpu_online(unsigned int cpu)
 		pg_data_t *pgdat = NODE_DATA(nid);
 		const struct cpumask *mask;
 
-		mask = cpumask_of_node(pgdat->node_id);
+		mask = get_kcompactd_cpumask(pgdat);
 
 		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
 			/* One of our CPUs online: restore mask */

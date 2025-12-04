@@ -320935,6 +320935,12 @@ function {
   parameter_id: 0x7584e7da
 }
 function {
+  id: 0x1e5195df
+  return_type_id: 0x48b5725f
+  parameter_id: 0x3d551c03
+  parameter_id: 0x6720d32f
+}
+function {
   id: 0x1e571002
   return_type_id: 0x48b5725f
   parameter_id: 0x3ac2a209
@@ -357808,6 +357814,11 @@ function {
   id: 0xc1439b43
   return_type_id: 0x4585663f
   parameter_id: 0x3e6396e0
+}
+function {
+  id: 0xc18e39fb
+  return_type_id: 0x4585663f
+  parameter_id: 0x3d551c03
 }
 function {
   id: 0xc18f1240
@@ -413007,6 +413018,33 @@ elf_symbol {
   full_name: "lock_two_nondirectories"
 }
 elf_symbol {
+  id: 0xb0801f6e
+  name: "kdp_set_cred_non_rcu"
+  is_defined: true
+  symbol_type: FUNCTION
+  crc: 0x738bae5e
+  type_id: 0x1e5195df
+  full_name: "kdp_set_cred_non_rcu"
+}
+elf_symbol {
+  id: 0x3037c5bc
+  name: "kdp_usecount_dec_and_test"
+  is_defined: true
+  symbol_type: FUNCTION
+  crc: 0xda582aa5
+  type_id: 0xc18e39fb
+  full_name: "kdp_usecount_dec_and_test"
+}
+elf_symbol {
+  id: 0x8334a496
+  name: "kdp_usecount_inc"
+  is_defined: true
+  symbol_type: FUNCTION
+  crc: 0xfb342499
+  type_id: 0x1fcd1693
+  full_name: "kdp_usecount_inc"
+}
+elf_symbol {
   id: 0x42eaca18
   name: "lockref_get"
   is_defined: true
@@ -452581,6 +452619,9 @@ interface {
   symbol_id: 0x81dadb36
   symbol_id: 0x9bfc3a5e
   symbol_id: 0xc750a072
+  symbol_id: 0xb0801f6e
+  symbol_id: 0x3037c5bc
+  symbol_id: 0x8334a496
   symbol_id: 0x132eb5f1
   symbol_id: 0xbccf7511
   symbol_id: 0xc29558ef

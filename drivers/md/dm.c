@@ -31,6 +31,7 @@
 #include <linux/part_stat.h>
 #include <linux/blk-crypto.h>
 #include <linux/blk-crypto-profile.h>
+#include <linux/dm-ioctl.h>
 
 #define DM_MSG_PREFIX "core"
 
@@ -453,6 +454,14 @@ static int dm_blk_ioctl(struct block_device *bdev, blk_mode_t mode,
 {
 	struct mapped_device *md = bdev->bd_disk->private_data;
 	int r, srcu_idx;
+
+	if (cmd == DM_BLK_SET_RELIABLE_WRITE) {
+		set_bit(DMF_RELIABLE_WRITE, &md->flags);
+		return 0;
+	} else if (cmd == DM_BLK_CLEAR_RELIABLE_WRITE) {
+		clear_bit(DMF_RELIABLE_WRITE, &md->flags);
+		return 0;
+	}
 
 	r = dm_prepare_ioctl(md, &srcu_idx, &bdev);
 	if (r < 0)
@@ -1573,8 +1582,15 @@ static void __send_empty_flush(struct clone_info *ci)
 		struct list_head *devices = dm_table_get_devices(t);
 		unsigned int len = 0;
 		struct dm_dev_internal *dd;
+		struct request_queue *last_rq = NULL;
+
 		list_for_each_entry(dd, devices, list) {
 			struct bio *clone;
+
+			if (last_rq == bdev_get_queue(dd->dm_dev->bdev))
+				continue;
+
+			last_rq = bdev_get_queue(dd->dm_dev->bdev);
 			/*
 			 * Note that the structure dm_target_io is not
 			 * associated with any target (because the device may be
@@ -1854,6 +1870,11 @@ static void dm_submit_bio(struct bio *bio)
 			    dm_device_name(md));
 		bio_io_error(bio);
 		goto out;
+	}
+
+	if (test_bit(DMF_RELIABLE_WRITE, &md->flags)
+		&& (bio_op(bio) == REQ_OP_WRITE)) {
+		bio->bi_opf |= REQ_RELIABLE;
 	}
 
 	/* If suspended, queue this IO for later */

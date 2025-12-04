@@ -439,6 +439,10 @@ enum req_flag_bits {
 	/* for REQ_OP_WRITE_ZEROES: */
 	__REQ_NOUNMAP,		/* do not free blocks when zeroing */
 
+	/*
+	 * Added for reliable write of blkdev
+	 */
+	__REQ_RELIABLE,
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -466,6 +470,8 @@ enum req_flag_bits {
 #define REQ_FS_PRIVATE	(__force blk_opf_t)(1ULL << __REQ_FS_PRIVATE)
 
 #define REQ_NOUNMAP	(__force blk_opf_t)(1ULL << __REQ_NOUNMAP)
+
+#define REQ_RELIABLE	(__force blk_opf_t)(1ULL << __REQ_RELIABLE)
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)

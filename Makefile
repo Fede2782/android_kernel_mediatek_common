@@ -1560,6 +1560,9 @@ vmlinuxclean:
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/link-vmlinux.sh clean
 	$(Q)$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) clean)
 
+legoclean:
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/lego/kclean.sh $(srctree)/.legofile
+
 clean: archclean vmlinuxclean resolve_btfids_clean objtool_clean
 
 # mrproper - Delete all generated files, including .config

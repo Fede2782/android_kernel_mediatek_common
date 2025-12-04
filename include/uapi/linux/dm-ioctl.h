@@ -258,6 +258,13 @@ enum {
 	DM_DEV_SET_GEOMETRY_CMD,
 	DM_DEV_ARM_POLL_CMD,
 	DM_GET_TARGET_VERSION_CMD,
+
+	/*
+	 * Device mapper blkdev cmds added for reliable write
+	 * No change to dm-ioctl.c:lookup_ioctl()
+	 */
+	DM_BLK_SET_RELIABLE_WRITE_CMD = 30,
+	DM_BLK_CLEAR_RELIABLE_WRITE_CMD,
 };
 
 #define DM_IOCTL 0xfd
@@ -284,6 +291,10 @@ enum {
 
 #define DM_TARGET_MSG	 _IOWR(DM_IOCTL, DM_TARGET_MSG_CMD, struct dm_ioctl)
 #define DM_DEV_SET_GEOMETRY	_IOWR(DM_IOCTL, DM_DEV_SET_GEOMETRY_CMD, struct dm_ioctl)
+
+/* Added for reliable write */
+#define DM_BLK_SET_RELIABLE_WRITE	_IO(DM_IOCTL, DM_BLK_SET_RELIABLE_WRITE_CMD)
+#define DM_BLK_CLEAR_RELIABLE_WRITE	_IO(DM_IOCTL, DM_BLK_CLEAR_RELIABLE_WRITE_CMD)
 
 #define DM_VERSION_MAJOR	4
 #define DM_VERSION_MINOR	48

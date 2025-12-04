@@ -14,6 +14,7 @@
 #include <linux/dax.h>
 #include <linux/exportfs.h>
 #include "xattr.h"
+#include <linux/cleancache.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/erofs.h>
@@ -682,6 +683,8 @@ static int erofs_fc_fill_super(struct super_block *sb, struct fs_context *fc)
 	err = erofs_register_sysfs(sb);
 	if (err)
 		return err;
+
+	cleancache_init_fs(sb);
 
 	erofs_info(sb, "mounted with root inode @ nid %llu.", ROOT_NID(sbi));
 	return 0;

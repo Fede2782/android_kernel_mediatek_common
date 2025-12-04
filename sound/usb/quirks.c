@@ -2091,8 +2091,17 @@ static const struct usb_audio_quirk_flags_table quirk_flags_table[] = {
 		   QUIRK_FLAG_GET_SAMPLE_RATE),
 	DEVICE_FLG(0x04d8, 0xfeea, /* Benchmark DAC1 Pre */
 		   QUIRK_FLAG_GET_SAMPLE_RATE),
+#if !defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
 	DEVICE_FLG(0x04e8, 0xa051, /* Samsung USBC Headset (AKG) */
 		   QUIRK_FLAG_SKIP_CLOCK_SELECTOR | QUIRK_FLAG_CTL_MSG_DELAY_5M),
+#else
+	DEVICE_FLG(0x04e8, 0xa051, /* Samsung USBC Headset (AKG) */
+		   QUIRK_FLAG_SKIP_CLOCK_SELECTOR | QUIRK_FLAG_CTL_MSG_DELAY_1M),
+	DEVICE_FLG(0x2fc6, 0xf076, /* truthear */
+		   QUIRK_FLAG_CTL_MSG_DELAY_5M),
+	DEVICE_FLG(0x2fc6, 0x6013, /* e1da */
+		   QUIRK_FLAG_CTL_MSG_DELAY),
+#endif
 	DEVICE_FLG(0x0525, 0xa4ad, /* Hamedal C20 usb camero */
 		   QUIRK_FLAG_IFACE_SKIP_CLOSE),
 	DEVICE_FLG(0x054c, 0x0b8c, /* Sony WALKMAN NW-A45 DAC */
@@ -2354,7 +2363,12 @@ static const struct usb_audio_quirk_flags_table quirk_flags_table[] = {
 		   QUIRK_FLAG_DSD_RAW),
 	VENDOR_FLG(0xc502, /* HiBy devices */
 		   QUIRK_FLAG_DSD_RAW),
-
+#if defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
+	VENDOR_FLG(0x04e8, /* Samsung */
+		   QUIRK_FLAG_CTL_MSG_DELAY_1M),
+	VENDOR_FLG(0x2fc6, /* Comtrue */
+		   QUIRK_FLAG_CTL_MSG_DELAY_1M),
+#endif
 	{} /* terminator */
 };
 
@@ -2366,7 +2380,7 @@ void snd_usb_init_quirk_flags(struct snd_usb_audio *chip)
 		if (chip->usb_id == p->id ||
 		    (!USB_ID_PRODUCT(p->id) &&
 		     USB_ID_VENDOR(chip->usb_id) == USB_ID_VENDOR(p->id))) {
-			usb_audio_dbg(chip,
+			usb_audio_info(chip,
 				      "Set quirk_flags 0x%x for device %04x:%04x\n",
 				      p->flags, USB_ID_VENDOR(chip->usb_id),
 				      USB_ID_PRODUCT(chip->usb_id));

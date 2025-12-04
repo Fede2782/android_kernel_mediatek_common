@@ -184,6 +184,11 @@ static inline struct cred *get_new_cred(struct cred *cred)
 	return cred;
 }
 
+static inline struct cred *get_new_cred_module(struct cred *cred)
+{
+	atomic_long_inc(&cred->usage);
+	return cred;
+}
 /**
  * get_cred - Get a reference on a set of credentials
  * @cred: The credentials to reference
@@ -204,6 +209,15 @@ static inline const struct cred *get_cred(const struct cred *cred)
 		return cred;
 	nonconst_cred->non_rcu = 0;
 	return get_new_cred(nonconst_cred);
+}
+
+static inline const struct cred *get_cred_module(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return cred;
+	nonconst_cred->non_rcu = 0;
+	return get_new_cred_module(nonconst_cred);
 }
 
 static inline const struct cred *get_cred_rcu(const struct cred *cred)
@@ -229,6 +243,16 @@ static inline const struct cred *get_cred_rcu(const struct cred *cred)
  * alteration of otherwise immutable credential sets.
  */
 static inline void put_cred(const struct cred *_cred)
+{
+	struct cred *cred = (struct cred *) _cred;
+
+	if (cred) {
+		if (atomic_long_dec_and_test(&(cred)->usage))
+			__put_cred(cred);
+	}
+}
+
+static inline void put_cred_module(const struct cred *_cred)
 {
 	struct cred *cred = (struct cred *) _cred;
 
@@ -279,6 +303,8 @@ static inline void put_cred(const struct cred *_cred)
 #define get_current_cred()				\
 	(get_cred(current_cred()))
 
+#define get_current_cred_module()				\
+	(get_cred_module(current_cred()))
 /**
  * get_current_user - Get the current task's user_struct
  *

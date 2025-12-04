@@ -161,8 +161,10 @@ static void z_erofs_onlinepage_end(struct page *page, int err, bool dirty)
 	ClearPagePrivate(page);
 	if (v & BIT(Z_EROFS_ONLINEPAGE_DIRTY))
 		flush_dcache_page(page);
-	if (!(v & BIT(Z_EROFS_ONLINEPAGE_EIO)))
+	if (!(v & BIT(Z_EROFS_ONLINEPAGE_EIO))) {
+		SetPageMappedToDisk(page);
 		SetPageUptodate(page);
+	}
 	unlock_page(page);
 }
 
@@ -1012,6 +1014,10 @@ static int z_erofs_do_read_page(struct z_erofs_decompress_frontend *fe,
 	int err = 0;
 
 	z_erofs_onlinepage_init(page);
+
+	if (cleancache_get_page(page) == 0)
+		goto out;
+
 	split = 0;
 	end = PAGE_SIZE;
 repeat:

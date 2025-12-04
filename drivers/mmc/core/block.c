@@ -1946,7 +1946,8 @@ static void mmc_blk_mq_rw_recovery(struct mmc_queue *mq, struct request *req)
 	}
 
 	if (rq_data_dir(req) == READ && brq->data.blocks >
-			queue_physical_block_size(mq->queue) >> 9) {
+			queue_physical_block_size(mq->queue) >> 9 &&
+			!mmc_card_sd(card)) {
 		/* Read one (native) sector at a time */
 		mmc_blk_read_single(mq, req);
 		return;

@@ -957,6 +957,9 @@ static int usb_audio_probe(struct usb_interface *intf,
 	chip->intf[chip->num_interfaces] = intf;
 	chip->num_interfaces++;
 	usb_set_intfdata(intf, chip);
+	/* enable auto suspend */
+	usb_enable_autosuspend(dev);
+	device_wakeup_enable(&dev->dev);
 	atomic_dec(&chip->active);
 
 	if (platform_ops && platform_ops->connect_cb)

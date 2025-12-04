@@ -222,7 +222,7 @@ static bool validate_uac3_feature_unit(const void *p,
 }
 
 static bool validate_uac3_power_domain_unit(const void *p,
-					    const struct usb_desc_validator *v)
+ const struct usb_desc_validator *v)
 {
 	const struct uac3_power_domain_descriptor *d = p;
 

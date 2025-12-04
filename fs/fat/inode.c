@@ -23,6 +23,7 @@
 #include <asm/unaligned.h>
 #include <linux/random.h>
 #include <linux/iversion.h>
+#include <linux/fat_common.h>
 #include "fat.h"
 
 #ifndef CONFIG_FAT_DEFAULT_IOCHARSET
@@ -729,12 +730,19 @@ static void fat_put_super(struct super_block *sb)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 
+	fat_msg(sb, KERN_INFO, "trying to unmount(r%c)...",
+		sb_rdonly(sb) ? 'o' : 'w');
+	fat_stlog(sb, "trying to unmount(r%c)...", sb_rdonly(sb) ? 'o' : 'w');
+
 	fat_set_state(sb, 0, 0);
 
 	iput(sbi->fsinfo_inode);
 	iput(sbi->fat_inode);
 
 	call_rcu(&sbi->rcu, delayed_free);
+
+	fat_msg(sb, KERN_INFO, "unmounted successfully!");
+	fat_stlog(sb, "unmounted successfully!");
 }
 
 static struct kmem_cache *fat_inode_cachep;
@@ -1592,6 +1600,18 @@ out:
 	return error;
 }
 
+static void fat_stlog_boot_sector(struct super_block *sb)
+{
+	struct buffer_head *bh;
+
+	bh = sb_bread(sb, 0);
+	if (bh == NULL)
+		return;
+
+	fat_stlog_bs(sb, bh->b_data);
+	brelse(bh);
+}
+
 /*
  * Read the super block of an MS-DOS FS.
  */
@@ -1610,6 +1630,10 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 	char buf[50];
 	struct timespec64 ts;
 
+	fat_msg(sb, KERN_INFO, "trying to mount(r%c)...",
+		sb_rdonly(sb) ? 'o' : 'w');
+	fat_stlog(sb, "trying to mount(r%c)...", sb_rdonly(sb) ? 'o' : 'w');
+
 	/*
 	 * GFP_KERNEL is ok here, because while we do hold the
 	 * superblock lock, memory pressure can't call back into
@@ -1617,8 +1641,11 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 	 * it and have no inodes etc active!
 	 */
 	sbi = kzalloc(sizeof(struct msdos_sb_info), GFP_KERNEL);
-	if (!sbi)
+	if (!sbi) {
+		fat_msg(sb, KERN_ERR, "failed to mount! (ENOMEM)");
+		fat_stlog(sb, "failed to mount! (ENOMEM)");
 		return -ENOMEM;
+	}
 	sb->s_fs_info = sbi;
 
 	sb->s_flags |= SB_NODIRATIME;
@@ -1689,6 +1716,8 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 		}
 		brelse(bh_resize);
 	}
+
+	fat_stlog_boot_sector(sb);
 
 	mutex_init(&sbi->s_lock);
 	sbi->cluster_size = sb->s_blocksize * sbi->sec_per_clus;
@@ -1874,6 +1903,8 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 			"mounting with \"discard\" option, but the device does not support discard");
 
 	fat_set_state(sb, 1, 0);
+	fat_msg(sb, KERN_INFO, "mounted successfully!");
+	fat_stlog(sb, "mounted successfully!");
 	return 0;
 
 out_invalid:
@@ -1882,6 +1913,8 @@ out_invalid:
 		fat_msg(sb, KERN_INFO, "Can't find a valid FAT filesystem");
 
 out_fail:
+	fat_msg(sb, KERN_ERR, "failed to mount! (%ld)", error);
+	fat_stlog(sb, "failed to mount! (%ld)", error);
 	iput(fsinfo_inode);
 	iput(fat_inode);
 	unload_nls(sbi->nls_io);

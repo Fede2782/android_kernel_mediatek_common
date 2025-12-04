@@ -784,7 +784,7 @@ static void fuse_sync_fs_writes(struct fuse_conn *fc)
 	 */
 	atomic_dec(&bucket->count);
 
-	wait_event(bucket->waitq, atomic_read(&bucket->count) == 0);
+	fuse_wait_event(bucket->waitq, atomic_read(&bucket->count) == 0);
 
 	/* Drop temp count on descendant bucket */
 	fuse_sync_bucket_dec(new_bucket);
@@ -1122,6 +1122,7 @@ void fuse_conn_put(struct fuse_conn *fc)
 			WARN_ON(atomic_read(&bucket->count) != 1);
 			kfree(bucket);
 		}
+		fuse_daemon_watchdog_stop(fc);
 		call_rcu(&fc->rcu, delayed_release);
 	}
 }
@@ -1507,6 +1508,11 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 		fc->conn_error = 1;
 	}
 
+	fuse_daemon_watchdog_start(fc);
+
+	ST_LOG("<%s> dev = %u:%u  fuse Initialized",
+			__func__, MAJOR(fc->dev), MINOR(fc->dev));
+
 	fuse_set_initialized(fc);
 	wake_up_all(&fc->blocked_waitq);
 }
@@ -1696,6 +1702,9 @@ static void fuse_sb_defaults(struct super_block *sb)
 	sb->s_time_gran = 1;
 	sb->s_export_op = &fuse_export_operations;
 	sb->s_iflags |= SB_I_IMA_UNVERIFIABLE_SIGNATURE;
+#ifdef CONFIG_FREEZABLE_IN_LOOKUP
+	sb->s_iflags |= SB_I_FREEZABLE_IN_LOOKUP;
+#endif
 	if (sb->s_user_ns != &init_user_ns)
 		sb->s_iflags |= SB_I_UNTRUSTED_MOUNTER;
 	sb->s_flags &= ~(SB_NOSEC | SB_I_VERSION);

@@ -8,6 +8,7 @@
 #include <linux/fs.h>
 #include <linux/f2fs_fs.h>
 #include <linux/writeback.h>
+#include <linux/iversion.h>
 #include <linux/sched/mm.h>
 #include <linux/lz4.h>
 #include <linux/zstd.h>
@@ -30,6 +31,8 @@ void f2fs_mark_inode_dirty_sync(struct inode *inode, bool sync)
 
 	if (f2fs_readonly(F2FS_I_SB(inode)->sb))
 		return;
+
+	inode_inc_iversion(inode);
 
 	if (f2fs_inode_dirtied(inode, sync))
 		return;
@@ -436,6 +439,9 @@ static int do_read_inode(struct inode *inode)
 	inode->i_atime.tv_nsec = le32_to_cpu(ri->i_atime_nsec);
 	inode->i_mtime.tv_nsec = le32_to_cpu(ri->i_mtime_nsec);
 	inode->i_generation = le32_to_cpu(ri->i_generation);
+
+	inode_inc_iversion(inode);
+
 	if (S_ISDIR(inode->i_mode))
 		fi->i_current_depth = le32_to_cpu(ri->i_current_depth);
 	else if (S_ISREG(inode->i_mode))
@@ -471,6 +477,9 @@ static int do_read_inode(struct inode *inode)
 	}
 
 	if (!sanity_check_inode(inode, node_page)) {
+		print_block_data(sbi, inode->i_ino, page_address(node_page),
+				0, F2FS_BLKSIZE);
+		f2fs_bug_on(sbi, 1);
 		f2fs_put_page(node_page, 1);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
 		f2fs_handle_error(sbi, ERROR_CORRUPTED_INODE);
@@ -532,7 +541,11 @@ static int do_read_inode(struct inode *inode)
 
 	init_idisk_time(inode);
 
-	if (!sanity_check_extent_cache(inode, node_page)) {
+	if (!sanity_check_extent_cache(inode, node_page)
+		|| unlikely((inode->i_mode & S_IFMT) == 0)) {
+		print_block_data(sbi, inode->i_ino, page_address(node_page),
+				0, F2FS_BLKSIZE);
+		f2fs_bug_on(sbi, 1);
 		f2fs_put_page(node_page, 1);
 		f2fs_handle_error(sbi, ERROR_CORRUPTED_INODE);
 		return -EFSCORRUPTED;

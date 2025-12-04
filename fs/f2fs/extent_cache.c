@@ -122,11 +122,11 @@ static bool __may_extent_tree(struct inode *inode, enum extent_type type)
 	if (type == EX_READ) {
 		if (is_inode_flag_set(inode, FI_NO_EXTENT))
 			return false;
-		if (is_inode_flag_set(inode, FI_COMPRESSED_FILE) &&
+		if (f2fs_has_compressed_data(inode) &&
 				 !f2fs_sb_has_readonly(F2FS_I_SB(inode)))
 			return false;
 	} else if (type == EX_BLOCK_AGE) {
-		if (is_inode_flag_set(inode, FI_COMPRESSED_FILE))
+		if (f2fs_has_compressed_data(inode))
 			return false;
 		if (file_is_cold(inode))
 			return false;
@@ -647,8 +647,6 @@ static unsigned int __destroy_extent_node(struct inode *inode,
 		node_cnt += __free_extent_tree(sbi, et, nr_shrink);
 		write_unlock(&et->lock);
 	}
-
-	f2fs_bug_on(sbi, atomic_read(&et->node_cnt));
 
 	return node_cnt;
 }

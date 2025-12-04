@@ -435,7 +435,7 @@ void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...);
 #define fat_fs_error_ratelimit(sb, fmt, args...) \
 	__fat_fs_error(sb, __ratelimit(&MSDOS_SB(sb)->ratelimit), fmt , ## args)
 
-#define FAT_PRINTK_PREFIX "%sFAT-fs (%s): "
+#define FAT_PRINTK_PREFIX "%sFAT-fs (%s[%d:%d]): "
 #define fat_msg(sb, level, fmt, args...)				\
 do {									\
 	printk_index_subsys_emit(FAT_PRINTK_PREFIX, level, fmt, ##args);\

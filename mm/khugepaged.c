@@ -2564,13 +2564,21 @@ static int khugepaged(void *none)
 	return 0;
 }
 
+static bool raise_min_free_kbytes __read_mostly = true;
+
+static int __init early_raise_min_free_kbytes_param(char *buf)
+{
+	return kstrtobool(buf, &raise_min_free_kbytes);
+}
+early_param("raise_min_free_kbytes", early_raise_min_free_kbytes_param);
+
 static void set_recommended_min_free_kbytes(void)
 {
 	struct zone *zone;
 	int nr_zones = 0;
 	unsigned long recommended_min;
 
-	if (!hugepage_flags_enabled()) {
+	if (!hugepage_flags_enabled() || !raise_min_free_kbytes) {
 		calculate_min_free_kbytes();
 		goto update_wmarks;
 	}

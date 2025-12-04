@@ -4261,9 +4261,20 @@ static void addrconf_dad_work(struct work_struct *w)
 	}
 
 	ifp->dad_probes--;
-	addrconf_mod_dad_work(ifp,
-			      max(NEIGH_VAR(ifp->idev->nd_parms, RETRANS_TIME),
-				  HZ/100));
+	if (ifp->idev->dev != NULL && !strcmp(ifp->idev->dev->name, "aware_data0")) {
+		pr_info("Reduce waiting time from %d to %d (HZ=%d) to send NS for quick transmission for %s\n",
+			max(NEIGH_VAR(ifp->idev->nd_parms, RETRANS_TIME), HZ/100),
+			max(NEIGH_VAR(ifp->idev->nd_parms, RETRANS_TIME)/100, HZ/100),
+			HZ,
+			ifp->idev->dev->name);
+		addrconf_mod_dad_work(ifp,
+					max(NEIGH_VAR(ifp->idev->nd_parms, RETRANS_TIME)/100,
+					HZ/100));
+	} else {
+		addrconf_mod_dad_work(ifp,
+				      max(NEIGH_VAR(ifp->idev->nd_parms, RETRANS_TIME),
+					  HZ/100));
+	}
 	spin_unlock(&ifp->lock);
 	write_unlock_bh(&idev->lock);
 

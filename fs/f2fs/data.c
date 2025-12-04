@@ -28,6 +28,7 @@
 #include "iostat.h"
 #include <trace/events/f2fs.h>
 #include <trace/hooks/blk.h>
+#include <asm/div64.h>
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/fs.h>
 
@@ -347,12 +348,14 @@ static void f2fs_write_end_io(struct bio *bio)
 
 		if (unlikely(bio->bi_status)) {
 			mapping_set_error(page->mapping, -EIO);
-			if (type == F2FS_WB_CP_DATA)
+			if (type == F2FS_WB_CP_DATA) {
 				f2fs_stop_checkpoint(sbi, true,
 						STOP_CP_REASON_WRITE_FAIL);
+				f2fs_bug_on_endio(sbi, 1);
+			}
 		}
 
-		f2fs_bug_on(sbi, page->mapping == NODE_MAPPING(sbi) &&
+		f2fs_bug_on_endio(sbi, page->mapping == NODE_MAPPING(sbi) &&
 				page_folio(page)->index != nid_of_node(page));
 
 		dec_page_count(sbi, type);
@@ -463,6 +466,12 @@ static struct bio *__bio_alloc(struct f2fs_io_info *fio, int npages)
 	struct block_device *bdev;
 	sector_t sector;
 	struct bio *bio;
+	int defkey_bypass = 0;
+
+	if (fio->op_flags & F2FS_REQ_DEFKEY_BYPASS) {
+		fio->op_flags &= ~F2FS_REQ_DEFKEY_BYPASS;
+		defkey_bypass = 1;
+	}
 
 	bdev = f2fs_target_device(sbi, fio->new_blkaddr, &sector);
 	bio = bio_alloc_bioset(bdev, npages,
@@ -482,6 +491,9 @@ static struct bio *__bio_alloc(struct f2fs_io_info *fio, int npages)
 
 	if (fio->io_wbc)
 		wbc_init_bio(fio->io_wbc, bio);
+
+	if (defkey_bypass)
+		bio_set_skip_dm_default_key(bio);
 
 	return bio;
 }
@@ -2088,21 +2100,29 @@ static inline blk_opf_t f2fs_ra_op_flags(struct readahead_control *rac)
 	return op_flag;
 }
 
+struct map_blocks_container {
+	struct f2fs_map_blocks orig;
+	struct f2fs_map_blocks cow;
+};
+
 static int f2fs_read_single_page(struct inode *inode, struct folio *folio,
 					unsigned nr_pages,
-					struct f2fs_map_blocks *map,
+					struct f2fs_map_blocks *orig_map,
 					struct bio **bio_ret,
 					sector_t *last_block_in_bio,
 					struct readahead_control *rac)
 {
 	struct bio *bio = *bio_ret;
 	const unsigned int blocksize = F2FS_BLKSIZE;
+	struct map_blocks_container *map_container;
+	struct f2fs_map_blocks *map;
 	sector_t block_in_file;
 	sector_t last_block;
 	sector_t last_block_in_file;
 	sector_t block_nr;
 	pgoff_t index = folio_index(folio);
 	int ret = 0;
+	bool use_cow = false;
 
 	block_in_file = (sector_t)index;
 	last_block = block_in_file + nr_pages;
@@ -2117,6 +2137,14 @@ static int f2fs_read_single_page(struct inode *inode, struct folio *folio,
 	/*
 	 * Map blocks using the previous result first.
 	 */
+	if (f2fs_is_atomic_file(inode)) {
+		map_container = container_of(orig_map, struct map_blocks_container, orig);
+		map = &map_container->cow;
+		use_cow = true;
+	} else {
+		map = orig_map;
+	}
+check_prev_map:
 	if ((map->m_flags & F2FS_MAP_MAPPED) &&
 			block_in_file > map->m_lblk &&
 			block_in_file < (map->m_lblk + map->m_len))
@@ -2129,7 +2157,10 @@ static int f2fs_read_single_page(struct inode *inode, struct folio *folio,
 	map->m_lblk = block_in_file;
 	map->m_len = last_block - block_in_file;
 
-	ret = f2fs_map_blocks(inode, map, F2FS_GET_BLOCK_DEFAULT);
+	if (use_cow)
+		ret = f2fs_map_blocks(F2FS_I(inode)->cow_inode, map, F2FS_GET_BLOCK_DEFAULT);
+	else
+		ret = f2fs_map_blocks(inode, map, F2FS_GET_BLOCK_DEFAULT);
 	if (ret)
 		goto out;
 got_it:
@@ -2148,6 +2179,10 @@ got_it:
 			ret = -EFSCORRUPTED;
 			goto out;
 		}
+	} else if (use_cow) {
+		map = orig_map;
+		use_cow = false;
+		goto check_prev_map;
 	} else {
 zero_out:
 		folio_zero_segment(folio, 0, folio_size(folio));
@@ -2383,6 +2418,17 @@ out:
 }
 #endif
 
+static void initiate_map_blocks(struct f2fs_map_blocks *map)
+{
+	map->m_pblk = 0;
+	map->m_lblk = 0;
+	map->m_len = 0;
+	map->m_flags = 0;
+	map->m_next_pgofs = NULL;
+	map->m_next_extent = NULL;
+	map->m_seg_type = NO_CHECK_TYPE;
+	map->m_may_create = false;
+}
 /*
  * This function was originally taken from fs/mpage.c, and customized for f2fs.
  * Major change was from block_size == page_size in f2fs by default.
@@ -2392,7 +2438,7 @@ static int f2fs_mpage_readpages(struct inode *inode,
 {
 	struct bio *bio = NULL;
 	sector_t last_block_in_bio = 0;
-	struct f2fs_map_blocks map;
+	struct map_blocks_container map_container;
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	struct compress_ctx cc = {
 		.inode = inode,
@@ -2411,14 +2457,9 @@ static int f2fs_mpage_readpages(struct inode *inode,
 	unsigned max_nr_pages = nr_pages;
 	int ret = 0;
 
-	map.m_pblk = 0;
-	map.m_lblk = 0;
-	map.m_len = 0;
-	map.m_flags = 0;
-	map.m_next_pgofs = NULL;
-	map.m_next_extent = NULL;
-	map.m_seg_type = NO_CHECK_TYPE;
-	map.m_may_create = false;
+	initiate_map_blocks(&map_container.orig);
+	if (f2fs_is_atomic_file(inode))
+		initiate_map_blocks(&map_container.cow);
 
 	for (; nr_pages; nr_pages--) {
 		if (rac) {
@@ -2429,7 +2470,7 @@ static int f2fs_mpage_readpages(struct inode *inode,
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 		index = folio_index(folio);
 
-		if (!f2fs_compressed_file(inode))
+		if (!f2fs_has_compressed_data(inode))
 			goto read_single_page;
 
 		/* there are remained compressed pages, submit them */
@@ -2467,7 +2508,7 @@ static int f2fs_mpage_readpages(struct inode *inode,
 read_single_page:
 #endif
 
-		ret = f2fs_read_single_page(inode, folio, max_nr_pages, &map,
+		ret = f2fs_read_single_page(inode, folio, max_nr_pages, &map_container.orig,
 					&bio, &last_block_in_bio, rac);
 		if (ret) {
 #ifdef CONFIG_F2FS_FS_COMPRESSION
@@ -2481,7 +2522,7 @@ next_page:
 #endif
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
-		if (f2fs_compressed_file(inode)) {
+		if (f2fs_has_compressed_data(inode)) {
 			/* last page */
 			if (nr_pages == 1 && !f2fs_cluster_is_empty(&cc)) {
 				ret = f2fs_read_multi_pages(&cc, &bio,
@@ -2733,6 +2774,13 @@ got_it:
 	if (fio->meta_gc)
 		f2fs_wait_on_block_writeback(inode, fio->old_blkaddr);
 
+	if (file_is_hot(inode))
+		F2FS_I_SB(inode)->sec_stat.hot_file_written_blocks++;
+	else if (file_is_cold(inode))
+		F2FS_I_SB(inode)->sec_stat.cold_file_written_blocks++;
+	else
+		F2FS_I_SB(inode)->sec_stat.warm_file_written_blocks++;
+
 	/*
 	 * If current allocation needs SSR,
 	 * it had better in-place writes for updated data.
@@ -2836,6 +2884,8 @@ int f2fs_write_single_data_page(struct folio *folio, int *submitted,
 	};
 
 	trace_f2fs_writepage(folio, DATA);
+
+	f2fs_cond_set_fua(&fio);
 
 	/* we should bypass data pages to proceed the kworker jobs */
 	if (unlikely(f2fs_cp_error(sbi))) {
@@ -2996,6 +3046,94 @@ out:
 						wbc, FS_DATA_IO, 0, true);
 }
 
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+static void set_ml_file_temp(struct inode *inode, int is_cold)
+{
+	if (is_cold)
+		F2FS_I(inode)->i_advise |= FADVISE_COLD_BIT;
+	else
+		F2FS_I(inode)->i_advise &= ~FADVISE_COLD_BIT;
+}
+
+static bool fill_streamid_data(struct f2fs_sb_info *sbi, long long *arr, struct inode *inode)
+{
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	__le32 inode_uid;
+
+	if (sbi->mp_uid == 0 || fi->mtime_cnt == 0)
+		return false;
+	inode_uid = from_kuid(&init_user_ns, inode->i_uid)%100000;
+	arr[0] = (__s64)get_dirty_pages(inode) * 4096; /* dirty */
+	arr[1] = i_size_read(inode); /* file_size */
+	arr[2] = fi->mtime_interval>>34;
+	arr[3] = fi->mtime_cnt;
+	arr[4] = fi->is_cache * 1000000;
+	arr[5] = (uid_eq(KUIDT_INIT(inode_uid), KUIDT_INIT(sbi->mp_uid))) * 1000000;
+	arr[6] = fi->write_chunk;
+	arr[7] = fi->overwrite_cnt;
+	arr[8] = fi->append_cnt;
+	arr[9] = arr[7] * 1000000000;
+	arr[10] = arr[8] * 1000000000;
+	do_div(arr[9], arr[3]);
+	do_div(arr[10], arr[3]);
+	return true;
+}
+/*
+ *	we use logistic regression model to separate hot/cold write pattern.
+ *	selected parameters are as below
+ *	dirty page size, file size, overwrite, append, write count
+ *	average write time, size
+ *	ratio of overwrite, append write
+ *	use fusefs, has cache directory
+ *
+ *	weights about parameters are calculated in advance
+ *
+ *	we calculate cold score as below
+ *	cold score = (weight * normalized value of each writes)
+ *	if cold_score is bigger than threshold, file will be classified as cold
+ */
+static long long calculate_cold_score(struct f2fs_sb_info *sbi, struct inode *inode, long long *arr)
+{
+	long long cold_score = 0;
+	int i = 0;
+
+	for (i = 0; i < STREAMID_PARAMS ; i++)
+		cold_score += arr[i] * sbi->logistic_scale[i];
+
+	cold_score += sbi->logistic_bias;
+
+	return cold_score;
+}
+
+static int is_ml_cold(struct f2fs_sb_info *sbi, struct inode *inode, long long *arr)
+{
+	long long cold_score;
+
+#ifdef CONFIG_F2FS_ML_STREAMID_FORCE_COLD
+	if (F2FS_I(inode)->is_force_cold == 1)
+		return 1;
+#endif
+	cold_score = calculate_cold_score(sbi, inode, arr);
+	return cold_score > sbi->logistic_threshold;
+}
+
+static void do_ml_stream(struct f2fs_sb_info *sbi, struct inode *inode)
+{
+	long long arr[STREAMID_PARAMS];
+	int old_cold;
+	int new_cold;
+
+	if (sbi->streamid_enable && fill_streamid_data(sbi, arr, inode)) {
+
+		old_cold = file_is_cold(inode);
+		new_cold = is_ml_cold(sbi, inode, arr);
+
+		if (old_cold != new_cold)
+			set_ml_file_temp(inode, new_cold);
+	}
+
+}
+#endif
 /*
  * This function was copied from write_cache_pages from mm/page-writeback.c.
  * The major change is making write step of cold data page separately from
@@ -3042,6 +3180,9 @@ static int f2fs_write_cache_pages(struct address_space *mapping,
 	int submitted = 0;
 	int i;
 
+#ifdef CONFIG_F2FS_ML_BASED_STREAM_SEPARATION
+	do_ml_stream(sbi, mapping->host);
+#endif
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	if (f2fs_compressed_file(inode) &&
 		1 << cc.log_cluster_size > F2FS_ONSTACK_PAGES) {
@@ -4251,10 +4392,27 @@ int f2fs_init_post_read_wq(struct f2fs_sb_info *sbi)
 	return sbi->post_read_wq ? 0 : -ENOMEM;
 }
 
+int f2fs_init_truncate_wq(struct f2fs_sb_info *sbi)
+{
+	// TODO: check mount option
+	sbi->truncate_wq = alloc_workqueue("f2fs_truncate_wq",
+						 WQ_UNBOUND | WQ_MEM_RECLAIM,
+						 num_online_cpus());
+	if (!sbi->truncate_wq)
+		return -ENOMEM;
+	return 0;
+}
+
 void f2fs_destroy_post_read_wq(struct f2fs_sb_info *sbi)
 {
 	if (sbi->post_read_wq)
 		destroy_workqueue(sbi->post_read_wq);
+}
+
+void f2fs_destroy_truncate_wq(struct f2fs_sb_info *sbi)
+{
+	if (sbi->truncate_wq)
+		destroy_workqueue(sbi->truncate_wq);
 }
 
 int __init f2fs_init_bio_entry_cache(void)

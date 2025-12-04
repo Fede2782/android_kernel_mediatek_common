@@ -5114,6 +5114,18 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 static unsigned long fault_around_pages __read_mostly =
 	65536 >> PAGE_SHIFT;
 
+static int __init early_fault_around_bytes_param(char *buf)
+{
+	unsigned long fault_around_bytes;
+	int ret = kstrtoul(buf, 0, &fault_around_bytes);
+
+	if (!ret)
+		fault_around_pages = fault_around_bytes >> PAGE_SHIFT;
+
+	return ret;
+}
+early_param("fault_around_bytes", early_fault_around_bytes_param);
+
 #ifdef CONFIG_DEBUG_FS
 static int fault_around_bytes_get(void *data, u64 *val)
 {

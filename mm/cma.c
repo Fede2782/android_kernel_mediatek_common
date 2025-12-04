@@ -104,10 +104,13 @@ static void cma_clear_bitmap(struct cma *cma, unsigned long pfn,
 	spin_unlock_irqrestore(&cma->lock, flags);
 }
 
-static void __init cma_activate_area(struct cma *cma)
+static void cma_activate_area(struct cma *cma)
 {
 	unsigned long base_pfn = cma->base_pfn, pfn;
 	struct zone *zone;
+
+	if (cma->reserve_pages_on_error)
+		return;
 
 	cma->bitmap = bitmap_zalloc(cma_bitmap_maxno(cma), GFP_KERNEL);
 	if (!cma->bitmap)
@@ -203,7 +206,8 @@ unsigned long cma_get_first_virtzone_base(int nid)
 int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 				 unsigned int order_per_bit,
 				 const char *name,
-				 struct cma **res_cma)
+				 struct cma **res_cma,
+				 bool late_activate)
 {
 	struct cma *cma;
 
@@ -234,6 +238,7 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	cma->base_pfn = PFN_DOWN(base);
 	cma->count = size >> PAGE_SHIFT;
 	cma->order_per_bit = order_per_bit;
+	cma->reserve_pages_on_error = late_activate;
 	*res_cma = cma;
 	cma_area_count++;
 	totalcma_pages += (size / PAGE_SIZE);
@@ -396,7 +401,8 @@ int __init cma_declare_contiguous_nid(phys_addr_t base,
 		base = addr;
 	}
 
-	ret = cma_init_reserved_mem(base, size, order_per_bit, name, res_cma);
+	ret = cma_init_reserved_mem(base, size, order_per_bit, name, res_cma,
+				    false);
 	if (ret)
 		goto free_mem;
 
@@ -472,6 +478,11 @@ struct page *__cma_alloc(struct cma *cma, unsigned long count,
 	int num_attempts = 0;
 	int max_retries = 5;
 	bool bypass = false;
+
+	if (cma->reserve_pages_on_error) {
+		cma->reserve_pages_on_error = false;
+		cma_activate_area(cma);
+	}
 
 	if (WARN_ON_ONCE((gfp_mask & GFP_KERNEL) == 0 ||
 		(gfp_mask & ~(GFP_KERNEL|__GFP_NOWARN|__GFP_NORETRY)) != 0))

@@ -475,6 +475,7 @@ static int __init rmem_cma_setup(struct reserved_mem *rmem)
 {
 	unsigned long node = rmem->fdt_node;
 	bool default_cma = of_get_flat_dt_prop(node, "linux,cma-default", NULL);
+	bool late_activate = of_get_flat_dt_prop(node, "late_activate", NULL);
 	struct cma *cma;
 	int err;
 	phys_addr_t virtzone_limit = 0;
@@ -500,7 +501,8 @@ static int __init rmem_cma_setup(struct reserved_mem *rmem)
 		return -EINVAL;
 	}
 
-	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name, &cma);
+	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name, &cma,
+				    late_activate);
 	if (err) {
 		pr_err("Reserved memory: unable to setup CMA region\n");
 		return err;

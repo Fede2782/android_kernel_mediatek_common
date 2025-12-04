@@ -249,7 +249,7 @@ static int uvc_parse_format(struct uvc_device *dev,
 	unsigned int width_multiplier = 1;
 	unsigned int interval;
 	unsigned int i, n;
-	u8 ftype;
+	u8 ftype = UVC_VS_UNDEFINED;
 
 	if (buflen < 4)
 		return -EINVAL;
@@ -391,7 +391,7 @@ static int uvc_parse_format(struct uvc_device *dev,
 	 * based formats have frame descriptors.
 	 */
 	while (ftype && buflen > 2 && buffer[1] == USB_DT_CS_INTERFACE &&
-	       buffer[2] == ftype) {
+	       buffer[2] == ftype && buffer[2] != UVC_VS_UNDEFINED) {
 		unsigned int maxIntervalIndex;
 
 		frame = &frames[format->nframes];

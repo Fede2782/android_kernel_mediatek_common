@@ -1,5 +1,7 @@
 . ${ROOT_DIR}/${KERNEL_DIR}/build.config.constants
 
+ASB_SPL=2026-07-06
+
 KMI_GENERATION=8
 
 BRANCH=android15-6.6
